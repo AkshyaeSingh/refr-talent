@@ -9,6 +9,17 @@ cd ~/projects/talent-flow && npm run dev      # http://localhost:3000
 Postgres: Homebrew postgresql@16, db `talent_flow`. Login `alice@mats.org` / `password123` (MATS).
 AI key is in `.env` (ANTHROPIC_API_KEY). **After any schema change you must restart `npm run dev`** — a long-running dev server holds a stale Prisma client and will 500 on new fields.
 
+## Repo + deploying
+- Pushed to **github.com/AkshyaeSingh/refr-talent** (`origin/main`). Everything is on `main`.
+- Agent branches preserved locally: `claude/zen-hermann-f8347a` (Airtable), `claude/stoic-bhabha-adfd1d` (embedding search). Their worktrees live under `.claude/worktrees/` (ignored by eslint; remove with `git worktree remove` when done).
+- ⚠️ **To deploy on Vercel** you need: (1) a **hosted Postgres** (Neon/Supabase/Vercel Postgres) — `DATABASE_URL` currently points at local Postgres, which Vercel can't reach; run `npx prisma migrate deploy` against it. (2) Set env vars in Vercel: `DATABASE_URL`, `AUTH_SECRET`, `ANTHROPIC_API_KEY`, and (for Airtable) `AIRTABLE_CLIENT_ID/SECRET/REDIRECT_URI/SCOPES` + `TOKEN_ENCRYPTION_KEY`. See `.env.example`.
+
+## Latest: merged the two agent branches (done, verified, pushed)
+- **Airtable OAuth** (from claude/zen-hermann) ported onto the real Connector model: OAuth2+PKCE connect, tokens encrypted at rest (AES-256-GCM), base/table picker, auto-map+import+enrich on select, sync auto-refreshes tokens. "Connect with Airtable" on Integrations; degrades to a clear "not configured" state without env. Files: `src/lib/crypto.ts`, `src/lib/airtable/*`, `src/app/api/oauth/airtable/*`, `src/app/api/airtable/*`, `src/components/AirtableConnect.tsx`.
+- **Faceted search** (from claude/stoic-bhabha) ported over real enriched fields: client-side facet filters (credentials, topics, location, source, audience) with live counts + instant re-narrow, and highlighted credential chips on result cards. In `src/app/dashboard/page.tsx`.
+- **Embedding search NOT adopted** — the `@huggingface/transformers` bi/cross-encoder pipeline is a heavy dep (large install, ~90MB model download at first query, ONNX in Node) that duplicates what Claude search + enrichment already do; kept the Claude path. Revisit via the preserved branch if desired.
+- Verified: tsc + eslint clean, app runs, Airtable authorize redirects gracefully w/o env, search carries facet fields.
+
 ## Latest: brand + marketing pass (done, verified)
 - **Purple brand** everywhere (green→purple across all classes + hex + logo/icon/journey; `--accent` now #9333ea).
 - **About page** (`/dashboard/about`): one-liner → problem → 2 features each with a **looping animation** (`ConnectAnimation`: pool→Airtable→4 partner orgs; `SearchAnimation`: typed criteria → sources searched → ranked candidates) → tagline. Copy in `src/lib/marketing.ts`.
