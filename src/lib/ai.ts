@@ -11,11 +11,20 @@ import { CANDIDATE_FIELDS, type FieldMapping } from "@/lib/candidateFields";
 // AI layer for smart search. Everything here degrades gracefully: if no
 // ANTHROPIC_API_KEY is configured (or a call fails), callers fall back to
 // plain keyword search — the app never hard-depends on the API being up.
+// Timeout is generous (60s) with a retry so transient slowness doesn't drop us
+// to the inaccurate keyword path; the per-request search model is fast enough
+// that we rarely get near it.
 const client = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ timeout: 20_000, maxRetries: 1 })
+  ? new Anthropic({ timeout: 60_000, maxRetries: 2 })
   : null;
 
 export const aiAvailable = Boolean(client);
+
+// Model used for the latency-sensitive search path (criteria derivation +
+// per-candidate evaluation). Haiku is several times faster than Opus and more
+// than accurate enough for scored judgments, which is what makes evaluated
+// search quick and reliable instead of timing out and falling back to keywords.
+const SEARCH_MODEL = "claude-haiku-4-5-20251001";
 
 export type ParsedQuery = {
   keywords: string[];
@@ -913,7 +922,7 @@ export async function deriveCriteria(query: string): Promise<QueryCriterion[]> {
   if (!client) return [];
   try {
     const res = await client.messages.create({
-      model: "claude-opus-4-8",
+      model: SEARCH_MODEL,
       max_tokens: 1024,
       output_config: { format: { type: "json_schema", schema: CRITERIA_SCHEMA }, effort: "low" },
       system:
@@ -1023,7 +1032,7 @@ export async function evaluateCandidates(
     batches.map(async (batch) => {
       try {
         const res = await client!.messages.create({
-          model: "claude-opus-4-8",
+          model: SEARCH_MODEL,
           max_tokens: 4000,
           output_config: { format: { type: "json_schema", schema: EVAL_SCHEMA }, effort: "low" },
           system:

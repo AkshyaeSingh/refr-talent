@@ -40,6 +40,43 @@ const schema = z.object({
   explain: z.boolean().optional(),
 });
 
+// Cheap in-memory relevance prefilter used to build the evaluation shortlist
+// when the embedding models aren't available. Ranks rows by how many query
+// terms appear across their searchable text, falling back to input order
+// (recency) for ties/zeroes — good enough to feed the LLM evaluator.
+type PrefilterRow = {
+  name: string;
+  headline?: string | null;
+  summary?: string | null;
+  notes?: string | null;
+  skills: string[];
+  roleInterest: string[];
+  topics?: string[];
+  credentials?: string[];
+};
+function keywordPrefilter<T extends PrefilterRow>(rows: T[], query: string, n: number): T[] {
+  const terms = [...new Set(query.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])];
+  if (terms.length === 0) return rows.slice(0, n);
+  const scored = rows.map((r, i) => {
+    const hay = [
+      r.name,
+      r.headline ?? "",
+      r.summary ?? "",
+      r.notes ?? "",
+      r.skills.join(" "),
+      r.roleInterest.join(" "),
+      (r.topics ?? []).join(" "),
+      (r.credentials ?? []).join(" "),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const score = terms.reduce((s, t) => s + (hay.includes(t) ? 1 : 0), 0);
+    return { r, score, i };
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i);
+  return scored.slice(0, n).map((x) => x.r);
+}
+
 function keywordWhere(words: string[]) {
   return words.flatMap((w) => [
     { name: { contains: w, mode: "insensitive" as const } },
@@ -107,26 +144,43 @@ export async function POST(req: Request) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "desc" },
         take: 2000,
       });
       if (rows.length > 0) {
-        // Shortlist via embeddings (fall back to recency if models unavailable).
+        // Deriving criteria doesn't depend on the shortlist — kick it off now so
+        // it runs concurrently with retrieval instead of after it.
+        const criteriaPromise = deriveCriteria(q);
+
+        const SHORTLIST_N = 24;
         let shortlist = rows;
         const cosById = new Map<string, number>();
-        try {
-          const hits = await semanticSearch(q, rows, { retrieveK: 24, topN: 24 });
-          if (hits.length > 0) {
-            const byId = new Map(rows.map((r) => [r.id, r]));
-            shortlist = hits.map((h) => byId.get(h.id)!).filter(Boolean);
-            hits.forEach((h) => cosById.set(h.id, h.retrievalScore));
-          } else {
-            shortlist = rows.slice(0, 24);
+        if (rows.length > SHORTLIST_N) {
+          // Larger pools: narrow with embeddings, but never let that flaky/slow
+          // path block the search — fall back to a cheap keyword prefilter
+          // (much better than plain recency) if the models aren't available.
+          try {
+            // Bound the embedding step: a cold model download can take tens of
+            // seconds, so cut it off and use the keyword prefilter instead.
+            const hits = await Promise.race([
+              semanticSearch(q, rows, { retrieveK: SHORTLIST_N, topN: SHORTLIST_N }),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error("embed timeout")), 8000)),
+            ]);
+            if (hits.length > 0) {
+              const byId = new Map(rows.map((r) => [r.id, r]));
+              shortlist = hits.map((h) => byId.get(h.id)!).filter(Boolean);
+              hits.forEach((h) => cosById.set(h.id, h.retrievalScore));
+            } else {
+              shortlist = keywordPrefilter(rows, q, SHORTLIST_N);
+            }
+          } catch {
+            shortlist = keywordPrefilter(rows, q, SHORTLIST_N);
           }
-        } catch {
-          shortlist = rows.slice(0, 24);
         }
+        // Small pools skip retrieval entirely and evaluate everyone — faster and
+        // strictly more accurate than shortlisting.
 
-        const criteria = await deriveCriteria(q);
+        const criteria = await criteriaPromise;
         if (criteria.length > 0) {
           const evals = await evaluateCandidates(q, criteria, shortlist);
           const candidates = shortlist
