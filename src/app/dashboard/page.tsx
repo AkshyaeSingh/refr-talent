@@ -17,6 +17,9 @@ type Candidate = {
   credentials?: string[];
   topics?: string[];
   audienceTier?: string | null;
+  headline?: string | null;
+  summary?: string | null;
+  cos?: number;
   org: { id: string; name: string };
   originOrg?: { name: string } | null;
   score: number;
@@ -55,6 +58,17 @@ const EXAMPLES = [
 
 function commaList(v: string): string[] {
   return v.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+// Category colouring for credential pills (mirrors the results legend).
+const PROGRAM_CREDS = new Set([
+  "MATS", "ARENA", "SPAR", "MARS", "LASR Labs", "BlueDot / AISF", "EA university group",
+]);
+const ORG_CREDS = new Set(["AI safety org"]);
+function credentialClass(cred: string): string {
+  if (PROGRAM_CREDS.has(cred)) return "border border-orange-200 bg-orange-50 text-orange-800";
+  if (ORG_CREDS.has(cred)) return "border border-purple-200 bg-purple-50 text-purple-800";
+  return "border border-emerald-200 bg-emerald-50 text-emerald-800"; // degree / output
 }
 
 function SearchWorkspace() {
@@ -642,60 +656,87 @@ function SearchWorkspace() {
             </p>
           )}
           {!loading && candidates.length > 0 && (
-            <div className="text-xs text-neutral-400">
-              Showing {visibleCandidates.length} of {candidates.length}
+            <div className="flex items-center justify-between text-xs text-neutral-400">
+              <span>Showing {visibleCandidates.length} of {candidates.length}</span>
+              <span className="flex items-center gap-3">
+                <LegendDot className="border-orange-300 bg-orange-50" label="Program" />
+                <LegendDot className="border-purple-300 bg-purple-50" label="Org" />
+                <LegendDot className="border-blue-300 bg-blue-50" label="Focus" />
+                <LegendDot className="border-emerald-300 bg-emerald-50" label="Degree" />
+              </span>
             </div>
           )}
-          {visibleCandidates.map((c) => (
+          {visibleCandidates.map((c, i) => (
             <div key={c.id} className="card flex items-start gap-3">
               <input
                 type="checkbox"
                 className="mt-1.5"
                 checked={selected.has(c.id)}
                 onChange={() => toggle(c.id)}
+                title="Select to share / pull"
               />
               <Link href={`/dashboard/candidate/${c.id}`} className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold hover:underline">{c.name}</span>
-                  {c.matchPct !== null && <span className="badge-match">{c.matchPct}% match</span>}
-                  <span className="badge">{c.isMine ? "my pool" : c.org.name}</span>
-                  {c.originOrg && <span className="badge">via {c.originOrg.name}</span>}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-neutral-400">#{i + 1}</span>
+                      <span className="font-semibold hover:underline">{c.name}</span>
+                    </div>
+                    <div className="mt-0.5 text-sm text-neutral-600">
+                      {c.headline ||
+                        [c.experienceLevel, c.location, c.audienceTier].filter(Boolean).join(" · ")}
+                    </div>
+                    <div className="text-xs text-neutral-400">
+                      {[c.isMine ? "my pool" : c.org.name, c.location, c.remoteOk ? "remote ok" : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      {c.originOrg ? ` · via ${c.originOrg.name}` : ""}
+                    </div>
+                  </div>
+                  {c.matchPct !== null && (
+                    <div className="shrink-0 text-right">
+                      <div className="text-lg font-bold text-purple-700">{c.matchPct}%</div>
+                      <div className="text-[10px] uppercase tracking-wide text-neutral-400">match</div>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-0.5 text-xs text-neutral-500">
-                  {[c.experienceLevel, c.location, c.audienceTier, c.remoteOk ? "remote ok" : null]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-                {(c.credentials?.length ?? 0) > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {c.credentials!.slice(0, 5).map((cr) => (
-                      <span
-                        key={cr}
-                        className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800"
-                      >
+
+                {((c.credentials?.length ?? 0) > 0 || (c.topics?.length ?? 0) > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(c.credentials ?? []).slice(0, 5).map((cr) => (
+                      <span key={cr} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${credentialClass(cr)}`}>
                         {cr}
+                      </span>
+                    ))}
+                    {(c.topics ?? []).slice(0, 4).map((t) => (
+                      <span key={t} className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        {t}
                       </span>
                     ))}
                   </div>
                 )}
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {(c.topics ?? []).slice(0, 4).map((t) => (
-                    <span key={t} className="badge">
-                      {t}
-                    </span>
-                  ))}
-                  {c.skills.slice(0, 4).map((s) => (
-                    <span key={s} className="badge">
-                      {s}
-                    </span>
-                  ))}
-                </div>
+
+                {c.summary && <p className="mt-2 text-sm text-neutral-600">{c.summary}</p>}
+
                 {reasons[c.id] && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-purple-50/60 px-2.5 py-1.5 text-xs text-purple-900">
                     <span>✨</span>
                     <span>{reasons[c.id]}</span>
                   </div>
                 )}
+
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-neutral-400">
+                    {c.skills.slice(0, 6).map((s) => (
+                      <span key={s}>{s}</span>
+                    ))}
+                  </div>
+                  {typeof c.cos === "number" && (
+                    <span className="shrink-0 font-mono text-[10px] text-neutral-300">
+                      cos {c.cos.toFixed(2)} → rerank {(c.score ?? 0).toFixed(2)}
+                    </span>
+                  )}
+                </div>
               </Link>
             </div>
           ))}
@@ -714,6 +755,15 @@ function SearchWorkspace() {
         />
       )}
     </div>
+  );
+}
+
+function LegendDot({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className={`h-2.5 w-2.5 rounded-sm border ${className}`} />
+      {label}
+    </span>
   );
 }
 

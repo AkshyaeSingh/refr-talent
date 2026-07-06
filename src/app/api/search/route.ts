@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { scoreCandidate, maxScore, isCriteriaEmpty, type Criteria } from "@/lib/criteria";
+import { scoreCandidate, maxScore, isCriteriaEmpty, EMPTY_CRITERIA, type Criteria } from "@/lib/criteria";
 import { aiAvailable, parseQuery, explainMatches, parseCriteriaDoc, rankCandidates } from "@/lib/ai";
+import { semanticSearch } from "@/lib/search/pipeline";
+
+// Route handler runs on Node (Transformers.js needs the onnxruntime native addon).
+export const runtime = "nodejs";
 
 // Long free-text queries are treated as a "criteria doc" (a pasted role spec /
 // persona) and run through the two-stage matcher instead of flat parsing.
@@ -85,6 +89,55 @@ export async function POST(req: Request) {
   const orgClause = { OR: orClauses };
 
   const q = query?.trim();
+
+  // ── Semantic search: bi-encoder dense retrieval + cross-encoder rerank ─────
+  // Primary path for any free-text query. Runs locally in-process (no API),
+  // ranking the consent-gated pool by meaning rather than keywords. Falls
+  // through to the AI/keyword paths below if the models can't load or error.
+  if (q) {
+    try {
+      const rows = await prisma.candidate.findMany({
+        where: orgClause,
+        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true } } },
+        take: 2000,
+      });
+      const results = await semanticSearch(q, rows);
+      if (results.length > 0) {
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        const candidates = results
+          .map((r) => {
+            const row = byId.get(r.id);
+            return row
+              ? {
+                  ...row,
+                  score: r.score,
+                  matchPct: Math.round(r.score * 100),
+                  cos: r.retrievalScore,
+                  isMine: row.orgId === user.orgId,
+                }
+              : null;
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        let reasons: Record<string, string> | null = null;
+        if (explain && aiAvailable && candidates.length > 0) {
+          reasons = await explainMatches(q, EMPTY_CRITERIA, candidates.slice(0, 8));
+        }
+        return NextResponse.json({
+          candidates,
+          maxScore: 100,
+          myOrgId: user.orgId,
+          ai: null,
+          aiDoc: null,
+          aiAvailable,
+          reasons,
+          searchMode: "semantic",
+        });
+      }
+    } catch (err) {
+      console.error("Semantic search unavailable, falling back:", err);
+    }
+  }
 
   // ── Criteria-doc mode: two-stage match (recall → AI rerank) ───────────────
   // A long paste (a role spec or persona) gets broken into weighted required/
