@@ -255,6 +255,21 @@ model Connector {
   @@index([orgId])
 }
 
+// A public waitlist submission from the marketing landing page. Access to the
+// talent pool is invite-only (fellowships, programs, hiring orgs) — these are
+// reviewed manually before an org account is created for them.
+model WaitlistEntry {
+  id          String   @id @default(cuid())
+  orgName     String
+  orgType     String // fellowship | hiring | both
+  contactName String
+  email       String   @unique
+  website     String?
+  message     String?
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt   DateTime @default(now())
+}
+
 // A user-submitted request for an integration Refr doesn't support yet, with
 // the reason they want it. Surfaced to us to prioritize the connector roadmap.
 model IntegrationSuggestion {
