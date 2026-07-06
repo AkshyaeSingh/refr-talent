@@ -6,7 +6,7 @@ export const ONE_LINER =
 
 export const PROBLEM =
   "Right now, thousands of talented applicants are fragmented across different AI-safety programs. " +
-  "There's no central hub for orgs to share talent pools easily and securely — to increase " +
+  "There's no central hub for orgs to share talent pools easily and securely, to increase " +
   "discoverability and move talent faster through the training pipeline.";
 
 export const TAGLINE_A = "Orgs have better sourcing.";
@@ -15,7 +15,7 @@ export const TAGLINE_B = "Talent has better discoverability.";
 export const VALUE_POINTS: { title: string; blurb: string }[] = [
   {
     title: "Connect your talent pool",
-    blurb: "Bring your applicants in from Airtable, Typeform, or a CSV — and make them discoverable to the orgs you trust.",
+    blurb: "Bring your applicants in from Airtable, Typeform, or a CSV, and make them discoverable to the orgs you trust.",
   },
   {
     title: "Search by your criteria",

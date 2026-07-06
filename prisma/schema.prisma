@@ -256,12 +256,12 @@ model Connector {
 }
 
 // A public waitlist submission from the marketing landing page. Access to the
-// talent pool is invite-only (fellowships, programs, hiring orgs) — these are
+// talent pool is invite-only (fellowships, programs, hiring orgs); these are
 // reviewed manually before an org account is created for them.
 model WaitlistEntry {
   id          String   @id @default(cuid())
   orgName     String
-  orgType     String // fellowship | hiring | both
+  orgType     String? // fellowship | hiring | both — set on manual review, not collected on the form
   contactName String
   email       String   @unique
   website     String?

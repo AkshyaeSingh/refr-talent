@@ -1,34 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import Logo from "@/components/Logo";
 import ContourBackground from "@/components/ContourBackground";
 import { ConnectAnimation, SearchAnimation } from "@/components/FeatureAnimation";
 import { ONE_LINER, PROBLEM, VALUE_POINTS, TAGLINE_A, TAGLINE_B } from "@/lib/marketing";
 
-const ORG_TYPES = [
-  { value: "fellowship", label: "Fellowship / program", blurb: "You run cohorts and want your alumni discovered." },
-  { value: "hiring", label: "Hiring org", blurb: "You're sourcing candidates for open roles." },
-  { value: "both", label: "Both", blurb: "You run programs and hire." },
-];
-
 export default function LandingPage() {
   return (
-    <main className="relative min-h-screen bg-white">
+    <main className="relative min-h-screen">
       <ContourBackground />
 
       {/* Header */}
       <header className="relative mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
         <Logo size={22} />
-        <div className="flex items-center gap-3">
-          <Link href="/login" className="text-sm font-medium text-neutral-600 hover:text-neutral-900">
-            Log in
-          </Link>
-          <a href="#waitlist" className="btn-primary">
-            Join the waitlist
-          </a>
-        </div>
+        <a href="#waitlist" className="btn-primary">
+          Join the waitlist
+        </a>
       </header>
 
       {/* Hero */}
@@ -81,23 +69,18 @@ export default function LandingPage() {
       {/* Who it's for */}
       <section className="relative mx-auto max-w-5xl px-6 py-12">
         <h2 className="text-center text-2xl font-bold tracking-tight">Built for the AI-safety talent pipeline</h2>
-        <p className="mx-auto mt-2 max-w-xl text-center text-sm text-neutral-500">
-          Refr is invite-only, by design — every org on the network has opted in to sharing and
-          receiving talent in good faith.
-        </p>
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="card">
             <div className="text-lg font-semibold">Fellowships &amp; training programs</div>
             <p className="mt-1.5 text-sm text-neutral-600">
-              Give your alumni and applicants ongoing discoverability after the program ends —
-              instead of a spreadsheet that goes stale the day the cohort finishes.
+              Give your alumni and applicants ongoing discoverability after the program ends.
             </p>
           </div>
           <div className="card">
             <div className="text-lg font-semibold">Hiring orgs</div>
             <p className="mt-1.5 text-sm text-neutral-600">
-              Search across every connected program&apos;s pool with one query, and see exactly why
-              each candidate fits — not just a name and a resume link.
+              Search across every connected program&apos;s pool with one query, see exactly why each
+              candidate fits, and get notified of new talent.
             </p>
           </div>
         </div>
@@ -167,20 +150,18 @@ function ConsentGraphic() {
 }
 
 function WaitlistForm() {
-  const [orgName, setOrgName] = useState("");
-  const [orgType, setOrgType] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
+  const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
-  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<"new" | "existing" | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!orgName.trim() || !orgType || !contactName.trim() || !email.trim()) {
-      setError("Please fill in org name, type, your name, and email.");
+    if (!contactName.trim() || !email.trim() || !orgName.trim() || !website.trim()) {
+      setError("Please fill in your name, email, org name, and org website.");
       return;
     }
     setBusy(true);
@@ -188,7 +169,7 @@ function WaitlistForm() {
     const res = await fetch("/api/waitlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orgName, orgType, contactName, email, website, message }),
+      body: JSON.stringify({ contactName, email, orgName, website }),
     });
     const data = await res.json();
     setBusy(false);
@@ -202,8 +183,8 @@ function WaitlistForm() {
         <div className="text-2xl">✓</div>
         <p className="mt-2 text-sm font-medium text-purple-900">
           {done === "existing"
-            ? "You're already on the list — we'll be in touch soon."
-            : "You're on the list — we'll review and follow up shortly."}
+            ? "You're already on the list, we'll be in touch soon."
+            : "You're on the list, we'll review and follow up shortly."}
         </p>
       </div>
     );
@@ -211,55 +192,25 @@ function WaitlistForm() {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Org name
-        <input className="input" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Your org / program" />
-      </label>
-
-      <div>
-        <div className="mb-2 text-sm font-medium">What kind of org are you?</div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {ORG_TYPES.map((t) => (
-            <button
-              type="button"
-              key={t.value}
-              onClick={() => setOrgType(t.value)}
-              className={`rounded-xl border p-3 text-left transition-colors ${
-                orgType === t.value ? "border-purple-500 bg-purple-50" : "border-neutral-200 hover:border-neutral-300"
-              }`}
-            >
-              <div className="text-sm font-semibold">{t.label}</div>
-              <div className="mt-0.5 text-xs text-neutral-500">{t.blurb}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm font-medium">
           Your name
           <input className="input" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Jane Doe" />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
-          Work email
+          Your email
           <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@program.org" />
         </label>
       </div>
 
       <label className="flex flex-col gap-1 text-sm font-medium">
-        Website (optional)
-        <input className="input" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://your-program.org" />
+        Org name
+        <input className="input" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Your org / program" />
       </label>
 
       <label className="flex flex-col gap-1 text-sm font-medium">
-        Tell us about your talent pool (optional)
-        <textarea
-          className="input"
-          rows={3}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="e.g. ~200 alumni from our fellowship, mostly ML researchers and policy folks"
-        />
+        Org website
+        <input className="input" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://your-program.org" />
       </label>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
