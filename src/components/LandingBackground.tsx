@@ -16,8 +16,8 @@ export default function LandingBackground() {
           className="size-full"
           squareSize={4}
           gridGap={7}
-          color="#9333ea"
-          maxOpacity={0.12}
+          color="#71717a"
+          maxOpacity={0.18}
           flickerChance={0.045}
         />
       </div>
@@ -28,20 +28,32 @@ export default function LandingBackground() {
           className="size-full"
           squareSize={4}
           gridGap={7}
-          color="#6b7280"
-          maxOpacity={0.09}
+          color="#71717a"
+          maxOpacity={0.14}
           flickerChance={0.04}
         />
       </div>
 
-      {/* Small mid-right accent */}
-      <div className="absolute right-[6%] top-[34%] hidden h-[240px] w-[280px] [mask-image:radial-gradient(ellipse,black,transparent_70%)] lg:block">
+      {/* Mid-right accent (upper) */}
+      <div className="absolute right-[6%] top-[26%] hidden h-[240px] w-[280px] [mask-image:radial-gradient(ellipse,black,transparent_70%)] lg:block">
         <FlickeringGrid
           className="size-full"
           squareSize={4}
           gridGap={7}
-          color="#9333ea"
-          maxOpacity={0.08}
+          color="#71717a"
+          maxOpacity={0.12}
+          flickerChance={0.035}
+        />
+      </div>
+
+      {/* Mid-right accent (lower) */}
+      <div className="absolute right-[10%] top-[56%] hidden h-[220px] w-[260px] [mask-image:radial-gradient(ellipse,black,transparent_70%)] lg:block">
+        <FlickeringGrid
+          className="size-full"
+          squareSize={4}
+          gridGap={7}
+          color="#71717a"
+          maxOpacity={0.12}
           flickerChance={0.035}
         />
       </div>
