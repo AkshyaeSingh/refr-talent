@@ -1,0 +1,46 @@
+# Refr — TODO / handoff
+
+Talent-sharing platform for AI-safety fellowships & hiring orgs. Next.js 16 + Prisma 7 + local Postgres. Green light theme.
+
+## Run
+```
+cd ~/projects/talent-flow && npm run dev      # http://localhost:3000
+```
+Postgres: Homebrew postgresql@16, db `talent_flow`. Login `alice@mats.org` / `password123` (MATS).
+AI key is in `.env` (ANTHROPIC_API_KEY). **After any schema change you must restart `npm run dev`** — a long-running dev server holds a stale Prisma client and will 500 on new fields.
+
+## Latest: brand + marketing pass (done, verified)
+- **Purple brand** everywhere (green→purple across all classes + hex + logo/icon/journey; `--accent` now #9333ea).
+- **About page** (`/dashboard/about`): one-liner → problem → 2 features each with a **looping animation** (`ConnectAnimation`: pool→Airtable→4 partner orgs; `SearchAnimation`: typed criteria → sources searched → ranked candidates) → tagline. Copy in `src/lib/marketing.ts`.
+- **Onboarding step 0** uses the new one-liner + problem + 3 value points + tagline.
+- **Quick-share page** (`/share/[token]`) is now **two-column**: left marketing rail (title, tagline, 3 points, "Create your org"/"Log in" CTA) + right request pane with an intro "Share talent →" step before upload/connect.
+- Files: `src/lib/marketing.ts`, `src/components/FeatureAnimation.tsx`, `src/app/dashboard/about/page.tsx`, `src/app/onboarding/page.tsx`, `src/app/share/[token]/page.tsx`, `src/app/globals.css`.
+
+## ⚠️ Restart your dev server
+Today added new DB columns + routes. Your running server must be restarted to pick them up (Ctrl+C → `npm run dev`).
+
+## Done — latest session (FOUNDATION, verified on real Frame data)
+- **Enriched candidate profiles**: Candidate += headline, summary, links(Json), topics[], credentials[], audienceTier, consentToShare, enrichedFields[], profileExtractedAt. Org += logoUrl.
+- **AI profile extraction** (`extractProfiles` in `lib/ai.ts`, batched, heuristic fallback) + `CREDENTIAL_TAXONOMY` (MATS, ARENA, SPAR, MARS, LASR, BlueDot/AISF, EA university group, Alignment Forum/LW, PhD, first-author, OSS, AI-safety org, viral creator, founder). `POST /api/enrich` runs it over the pool; auto-fires after each import; manual buttons on Integrations page.
+- **Consent**: parsed from the "share with partners" column at ingest (`detectConsent`), refined by AI. Consent-gated: cross-org search and all push/pull/quick-share sharing exclude `consentToShare=false`. Your own pool still shows everyone.
+- **Candidate detail** shows the AI profile: headline, summary, highlighted credentials, topics, audience, links, "not shareable" flag, all labelled "AI-summarized".
+- **Proven on real Frame cohort**: e.g. shalina prakash → BlueDot/AISF + EA university group; Andres Nino → Viral creator (100k+), Founder. import→enrich→credentials/topics/consent all populate.
+
+## Do next (staged — all designed, not yet built)
+- [ ] **#34 Search redesign**: remove the structured criteria panel → pure natural-language box; after results, Juicebox-style **faceted filters** (topics, credentials, location, source org, audience) + **highlighted credential chips** on each card. (Biggest UX win; search page is large — do as focused pass.)
+- [ ] **#35 All Talent** left-nav page: whole accessible pool (own + friends' consented) combined, deduped, with the same facets.
+- [ ] **#36 Logo upload** on profile (Org.logoUrl exists) → show in sidebar/friends cards. + candidate profile polish.
+- [ ] **#37 Quick-share "Learn more about Refr"** button on `/share/[token]` → about view + sign up/login. + **criteria doc upload** in search (attach txt/md/pdf instead of typing).
+- [ ] **#38 Journey graph "Simulator view"** toggle: rich fake data, mature comprehensive network.
+- [ ] **#39 Airtable/Typeform OAuth** (replace API-key paste): needs a registered dev app (client id/secret + redirect URI in `.env`) — will scaffold authorize→callback→token→base-picker, gated on those creds. + AI web enrichment (fill gaps from LinkedIn/web, labelled AI-inferred).
+
+## Airtable/Typeform OAuth — what YOU must register (once)
+1. Airtable: create an OAuth integration → client id + secret, redirect URI `http://localhost:3000/api/oauth/airtable/callback`, scopes `data.records:read schema.bases:read`.
+2. Typeform: OAuth app → client id/secret, redirect, scope `responses:read`.
+3. Put the four creds in `.env`. Then the "Connect" buttons do a real redirect flow (no API keys for end users).
+
+## Profile fields worth showing per applicant (AI-safety space)
+Identity+reach (links, audience tier, platform), headline+summary, topics, **credentials/signals** (programs: MATS/ARENA/SPAR/BlueDot/EA-club; outputs: Alignment Forum/LW, first-author, OSS; employer: Apollo/Redwood/Anthropic), journey pipeline, consent, and AI-inferred fields clearly labelled.
+
+## Key files (this session)
+- `prisma/schema.prisma` (Candidate enrichment, Org.logoUrl), `src/lib/ai.ts` (extractProfiles + taxonomy), `src/lib/ingest.ts` (detectConsent), `src/app/api/enrich/route.ts`, `src/app/api/search/route.ts` (consent gate), `src/app/api/share/route.ts` (consent gate), `src/components/ImportPanel.tsx` (auto-enrich), `src/app/dashboard/candidate/[id]/page.tsx` (profile display), `src/app/dashboard/integrations/page.tsx` (analyze buttons).

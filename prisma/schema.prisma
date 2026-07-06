@@ -1,0 +1,282 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+model Org {
+  id         String   @id @default(cuid())
+  name       String
+  slug       String   @unique
+  orgType    String? // fellowship | hiring | both
+  focusAreas String[] @default([])
+  logoUrl    String? // data URL or hosted URL of the org's logo
+  createdAt  DateTime @default(now())
+
+  users         User[]
+  importBatches ImportBatch[]
+
+  candidates           Candidate[] @relation("OrgCandidates")
+  originatedCandidates Candidate[] @relation("CandidateOriginOrg")
+
+  connectionsA OrgConnection[] @relation("OrgA")
+  connectionsB OrgConnection[] @relation("OrgB")
+
+  shareActionsFrom ShareAction[] @relation("ShareFrom")
+  shareActionsTo   ShareAction[] @relation("ShareTo")
+
+  savedSearches SavedSearch[]
+  connectors    Connector[]
+  shareLinks    ShareLink[]   @relation("ShareLinkAsker")
+}
+
+// A one-time "quick share" request. An asker org creates a link with a plain
+// criteria description; anyone with the link (the giver — who need not be a
+// member) can open it, upload/connect their applicants, have them ranked
+// against the criteria, and share the chosen ones straight into the asker's
+// pool. No account or friendship required on the giver side.
+model ShareLink {
+  id            String    @id @default(cuid())
+  token         String    @unique
+  askerOrgId    String
+  askerOrg      Org       @relation("ShareLinkAsker", fields: [askerOrgId], references: [id])
+  createdById   String
+  title         String
+  criteriaText  String
+  status        String    @default("OPEN") // OPEN | RECEIVED | CLOSED
+  receivedCount Int       @default(0)
+  createdAt     DateTime  @default(now())
+  receivedAt    DateTime?
+
+  @@index([askerOrgId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(MEMBER)
+  createdAt    DateTime @default(now())
+}
+
+enum ConnectionStatus {
+  PENDING
+  APPROVED
+  DENIED
+  REVOKED
+}
+
+// A single edge between two orgs. Must be APPROVED before either org can
+// search the other's pool or push/pull candidates between them.
+model OrgConnection {
+  id            String           @id @default(cuid())
+  orgAId        String
+  orgBId        String
+  orgA          Org              @relation("OrgA", fields: [orgAId], references: [id])
+  orgB          Org              @relation("OrgB", fields: [orgBId], references: [id])
+  requestedById String // id of the org that sent the request (must equal orgAId or orgBId)
+  status        ConnectionStatus @default(PENDING)
+  // Preferred sharing style between the two orgs: MANUAL | ALL | TOP_FITS.
+  // Used as the default when sharing from search.
+  shareMode     String           @default("MANUAL")
+  createdAt     DateTime         @default(now())
+  respondedAt   DateTime?
+
+  @@unique([orgAId, orgBId])
+}
+
+enum ImportSourceType {
+  CSV
+  AIRTABLE
+  TYPEFORM
+  NOTION
+  GOOGLE_FORM
+  MANUAL
+}
+
+// One ingest event: a CSV drop, or a sync pass against a connected
+// Airtable/Typeform/Notion/Google Form source. Stores the column -> schema
+// field mapping so repeat syncs from the same source don't need remapping.
+model ImportBatch {
+  id           String           @id @default(cuid())
+  orgId        String
+  org          Org              @relation(fields: [orgId], references: [id])
+  sourceType   ImportSourceType
+  label        String
+  fieldMapping Json
+  createdAt    DateTime         @default(now())
+
+  candidates Candidate[]
+}
+
+model Candidate {
+  id            String       @id @default(cuid())
+  orgId         String
+  org           Org          @relation("OrgCandidates", fields: [orgId], references: [id])
+  importBatchId String?
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  name            String
+  email           String?
+  phone           String?
+  skills          String[]
+  roleInterest    String[]
+  experienceLevel String?
+  location        String?
+  remoteOk        Boolean  @default(false)
+  linkedinUrl     String?
+  resumeUrl       String?
+  notes           String?
+  rawFields       Json?
+
+  // ── AI-extracted domain profile (populated by /api/enrich) ──────────────
+  headline           String? // one-line "who they are"
+  summary            String? // 2–3 sentence profile summary
+  links              Json? // { linkedin, youtube, twitter, website, github, portfolio }
+  topics             String[]  @default([]) // normalized focus areas (AI safety, climate, interpretability…)
+  credentials        String[]  @default([]) // signal tags (MATS, ARENA, BlueDot, EA club, PhD…)
+  audienceTier       String? // for creators: 0-2k / 2-10k / 10-100k / 100k-1M / 1M+
+  // Which fields were AI-inferred from external sources (LinkedIn/web) rather
+  // than the application itself — so the UI can label them and never pass a
+  // guess off as fact.
+  enrichedFields     String[]  @default([])
+  profileExtractedAt DateTime?
+
+  // Consent: whether the applicant agreed to have their info shared with
+  // partner orgs. Candidates who said no never flow across an org boundary.
+  consentToShare Boolean @default(true)
+
+  // Provenance: set when this row is a copy created by a push/pull from
+  // another org's pool, so both sides can trace where a candidate came from.
+  originOrgId       String?
+  originOrg         Org?        @relation("CandidateOriginOrg", fields: [originOrgId], references: [id])
+  // Free-text provenance for candidates that arrived via a quick-share link
+  // from a giver who isn't a member org (e.g. "Shared by ARENA").
+  originLabel       String?
+  originCandidateId String?
+  originCandidate   Candidate?  @relation("CandidateOrigin", fields: [originCandidateId], references: [id])
+  copies            Candidate[] @relation("CandidateOrigin")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shareActions ShareAction[]
+  events       CandidateEvent[]
+
+  @@index([orgId])
+  @@index([orgId, email])
+  @@index([originCandidateId])
+}
+
+enum CandidateEventType {
+  IMPORTED
+  PUSHED_OUT
+  PULLED_IN
+  UPDATED
+}
+
+// Append-only timeline for a candidate row: how it entered this org's pool
+// (import or a share) and any subsequent movement. Powers the "history" shown
+// on a candidate's detail view.
+model CandidateEvent {
+  id          String             @id @default(cuid())
+  candidateId String
+  candidate   Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  orgId       String
+  type        CandidateEventType
+  description String
+  createdAt   DateTime           @default(now())
+
+  @@index([candidateId])
+}
+
+// A stored search / criteria set, shown under "History" in the sidebar and
+// re-runnable. criteria holds the structured filter used for ranking top fits.
+model SavedSearch {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id])
+  createdById String
+  name        String
+  query       String   @default("")
+  criteria    Json // { skills: string[], roleInterest: string[], experienceLevel?, location?, remoteOk? }
+  targetOrgId String? // which pool it searched (null = own pool)
+  createdAt   DateTime @default(now())
+
+  @@index([orgId])
+}
+
+enum ConnectorType {
+  CSV
+  AIRTABLE
+  TYPEFORM
+}
+
+enum ConnectorStatus {
+  ACTIVE
+  ERROR
+  NEVER_SYNCED
+}
+
+// A data source feeding an org's pool. CSV is one-shot per upload; Airtable and
+// Typeform store credentials/config so the pool can be re-synced (constant
+// updates) as new applicants arrive.
+model Connector {
+  id           String          @id @default(cuid())
+  orgId        String
+  org          Org             @relation(fields: [orgId], references: [id])
+  type         ConnectorType
+  label        String
+  config       Json // Airtable: { token, baseId, tableId, fieldMapping }; Typeform: { token, formId, fieldMapping }
+  status       ConnectorStatus @default(NEVER_SYNCED)
+  lastSyncedAt DateTime?
+  lastError    String?
+  createdAt    DateTime        @default(now())
+
+  @@index([orgId])
+}
+
+enum ShareType {
+  PUSH
+  PULL
+}
+
+enum ShareScope {
+  SINGLE
+  LIST
+}
+
+// Audit log + trigger record for every candidate flow between two orgs.
+// The actual data movement (copying Candidate rows) happens alongside the
+// creation of this record.
+model ShareAction {
+  id             String     @id @default(cuid())
+  type           ShareType
+  scope          ShareScope
+  fromOrgId      String
+  toOrgId        String
+  fromOrg        Org        @relation("ShareFrom", fields: [fromOrgId], references: [id])
+  toOrg          Org        @relation("ShareTo", fields: [toOrgId], references: [id])
+  initiatedById  String
+  candidateId    String? // set when scope = SINGLE, references the source candidate
+  candidate      Candidate? @relation(fields: [candidateId], references: [id])
+  filterCriteria Json? // set when scope = LIST
+  candidateCount Int        @default(1)
+  createdAt      DateTime   @default(now())
+}
