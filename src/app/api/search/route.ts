@@ -3,7 +3,15 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { scoreCandidate, maxScore, isCriteriaEmpty, EMPTY_CRITERIA, type Criteria } from "@/lib/criteria";
-import { aiAvailable, parseQuery, explainMatches, parseCriteriaDoc, rankCandidates } from "@/lib/ai";
+import {
+  aiAvailable,
+  parseQuery,
+  explainMatches,
+  parseCriteriaDoc,
+  rankCandidates,
+  deriveCriteria,
+  evaluateCandidates,
+} from "@/lib/ai";
 import { semanticSearch } from "@/lib/search/pipeline";
 
 // Route handler runs on Node (Transformers.js needs the onnxruntime native addon).
@@ -89,6 +97,70 @@ export async function POST(req: Request) {
   const orgClause = { OR: orClauses };
 
   const q = query?.trim();
+
+  // ── Evaluated search (primary when AI is available): retrieve → judge ──────
+  // Embedding retrieval supplies a cheap shortlist; the LLM then scores each
+  // candidate against criteria derived from the query and cites per-criterion
+  // evidence ("what they've done"). This is the accurate, explainable path.
+  if (q && smart && aiAvailable) {
+    try {
+      const rows = await prisma.candidate.findMany({
+        where: orgClause,
+        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true } } },
+        take: 2000,
+      });
+      if (rows.length > 0) {
+        // Shortlist via embeddings (fall back to recency if models unavailable).
+        let shortlist = rows;
+        const cosById = new Map<string, number>();
+        try {
+          const hits = await semanticSearch(q, rows, { retrieveK: 24, topN: 24 });
+          if (hits.length > 0) {
+            const byId = new Map(rows.map((r) => [r.id, r]));
+            shortlist = hits.map((h) => byId.get(h.id)!).filter(Boolean);
+            hits.forEach((h) => cosById.set(h.id, h.retrievalScore));
+          } else {
+            shortlist = rows.slice(0, 24);
+          }
+        } catch {
+          shortlist = rows.slice(0, 24);
+        }
+
+        const criteria = await deriveCriteria(q);
+        if (criteria.length > 0) {
+          const evals = await evaluateCandidates(q, criteria, shortlist);
+          const candidates = shortlist
+            .map((row) => {
+              const ev = evals.get(row.id);
+              return {
+                ...row,
+                isMine: row.orgId === user.orgId,
+                score: ev?.score ?? 0,
+                matchPct: ev ? (ev.score ?? 0) : null,
+                cos: cosById.get(row.id),
+                summary: ev?.summary ?? row.summary,
+                verdicts: ev?.verdicts ?? [],
+              };
+            })
+            .sort((a, b) => (b.matchPct ?? -1) - (a.matchPct ?? -1));
+
+          return NextResponse.json({
+            candidates,
+            criteria,
+            maxScore: 100,
+            myOrgId: user.orgId,
+            ai: null,
+            aiDoc: null,
+            aiAvailable,
+            reasons: null,
+            searchMode: "evaluated",
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Evaluated search failed, falling back:", err);
+    }
+  }
 
   // ── Semantic search: bi-encoder dense retrieval + cross-encoder rerank ─────
   // Primary path for any free-text query. Runs locally in-process (no API),

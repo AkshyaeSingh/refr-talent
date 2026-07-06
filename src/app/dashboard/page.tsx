@@ -20,6 +20,7 @@ type Candidate = {
   headline?: string | null;
   summary?: string | null;
   cos?: number;
+  verdicts?: { key: string; status: "met" | "partial" | "missing"; evidence: string }[];
   org: { id: string; name: string };
   originOrg?: { name: string } | null;
   score: number;
@@ -71,6 +72,12 @@ function credentialClass(cred: string): string {
   return "border border-emerald-200 bg-emerald-50 text-emerald-800"; // degree / output
 }
 
+const VERDICT_STYLE: Record<string, { icon: string; pill: string }> = {
+  met: { icon: "✓", pill: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+  partial: { icon: "~", pill: "border-amber-200 bg-amber-50 text-amber-800" },
+  missing: { icon: "✕", pill: "border-neutral-200 bg-neutral-50 text-neutral-400" },
+};
+
 function SearchWorkspace() {
   const params = useSearchParams();
   const savedId = params.get("s");
@@ -98,6 +105,7 @@ function SearchWorkspace() {
   } | null>(null);
   const [aiOn, setAiOn] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [queryCriteria, setQueryCriteria] = useState<{ key: string; label: string }[]>([]);
   const [facets, setFacets] = useState<Record<FacetKey, Set<string>>>({
     credential: new Set(),
     topic: new Set(),
@@ -167,6 +175,7 @@ function SearchWorkspace() {
       });
       setAiInfo(data.ai ?? null);
       setAiDoc(data.aiDoc ?? null);
+      setQueryCriteria(data.criteria ?? []);
       setAiOn(Boolean(data.aiAvailable));
       setReasons(data.reasons ?? {});
       if (data.myOrgId) setMyOrgId(data.myOrgId);
@@ -646,10 +655,20 @@ function SearchWorkspace() {
         </div>
       )}
 
+      {/* Criteria the results are evaluated against */}
+      {ran && queryCriteria.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium text-neutral-500">Evaluated against:</span>
+          {queryCriteria.map((qc) => (
+            <span key={qc.key} className="chip">{qc.label}</span>
+          ))}
+        </div>
+      )}
+
       {/* Results */}
       {ran && (
         <div className="mt-5 flex flex-col gap-2 pb-16">
-          {loading && <p className="text-sm text-neutral-500">Searching…</p>}
+          {loading && <p className="text-sm text-neutral-500">✨ Evaluating candidates against your criteria…</p>}
           {!loading && candidates.length === 0 && (
             <p className="py-10 text-center text-sm text-neutral-400">
               No candidates found. Try a broader query, or add more pools with ＋.
@@ -717,6 +736,26 @@ function SearchWorkspace() {
                 )}
 
                 {c.summary && <p className="mt-2 text-sm text-neutral-600">{c.summary}</p>}
+
+                {/* Per-criterion evidence (what they've done) */}
+                {(c.verdicts?.length ?? 0) > 0 && (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {c.verdicts!.map((v) => {
+                      const label = queryCriteria.find((qc) => qc.key === v.key)?.label ?? v.key;
+                      const s = VERDICT_STYLE[v.status] ?? VERDICT_STYLE.missing;
+                      return (
+                        <div key={v.key} className="flex items-start gap-2 text-xs">
+                          <span
+                            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-medium ${s.pill}`}
+                          >
+                            {s.icon} {label}
+                          </span>
+                          <span className="text-neutral-600">{v.evidence}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {reasons[c.id] && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-purple-50/60 px-2.5 py-1.5 text-xs text-purple-900">

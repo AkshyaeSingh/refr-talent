@@ -785,3 +785,187 @@ export async function extractProfiles(
     return rawRows.map(heuristicProfile);
   }
 }
+
+// ── Criteria evaluation (Juicebox-style: retrieve → LLM judge per criterion) ─
+//
+// Turns a search into an explainable evaluation: derive a few concrete criteria
+// from the query, then judge each shortlisted candidate against each criterion
+// with a status + a one-line evidence citation. This is what makes results feel
+// accurate and shows "what they've done" — the embedding stage just supplies a
+// cheap shortlist; the LLM does the judging on that shortlist only.
+
+export type QueryCriterion = { key: string; label: string; description: string };
+
+const CRITERIA_SCHEMA = {
+  type: "object",
+  properties: {
+    criteria: {
+      type: "array",
+      description: "3–6 concrete, independently checkable criteria implied by the query.",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "short lowercase id, e.g. 'safety'" },
+          label: { type: "string", description: "1–2 word chip label, e.g. 'AI Safety'" },
+          description: { type: "string", description: "what evidence would satisfy this" },
+        },
+        required: ["key", "label", "description"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["criteria"],
+  additionalProperties: false,
+} as const;
+
+export async function deriveCriteria(query: string): Promise<QueryCriterion[]> {
+  if (!client) return [];
+  try {
+    const res = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 1024,
+      output_config: { format: { type: "json_schema", schema: CRITERIA_SCHEMA }, effort: "low" },
+      system:
+        "You turn a talent-search request into a short list of concrete, independently checkable " +
+        "criteria a recruiter would score candidates on. Prefer the hard requirements and the most " +
+        "distinctive signals. Keep labels to 1–2 words. 3–6 criteria.",
+      messages: [{ role: "user", content: query }],
+    });
+    const text = res.content.find((b) => b.type === "text")?.text;
+    if (!text) return [];
+    return (JSON.parse(text) as { criteria: QueryCriterion[] }).criteria ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type CriterionVerdict = { key: string; status: "met" | "partial" | "missing"; evidence: string };
+export type CandidateEvaluation = { id: string; score: number; summary: string; verdicts: CriterionVerdict[] };
+
+const EVAL_SCHEMA = {
+  type: "object",
+  properties: {
+    evaluations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "integer" },
+          score: { type: "integer", description: "0–100 overall fit for the query." },
+          summary: { type: "string", description: "One sentence on their fit, grounded in the data." },
+          verdicts: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string" },
+                status: { type: "string", enum: ["met", "partial", "missing"] },
+                evidence: {
+                  type: "string",
+                  description: "Short evidence from the candidate's data, or why it's missing. Never invent.",
+                },
+              },
+              required: ["key", "status", "evidence"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["index", "score", "summary", "verdicts"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["evaluations"],
+  additionalProperties: false,
+} as const;
+
+type EvalCandidate = {
+  id: string;
+  name: string;
+  headline?: string | null;
+  summary?: string | null;
+  credentials?: string[];
+  topics?: string[];
+  skills?: string[];
+  experienceLevel?: string | null;
+  location?: string | null;
+  notes?: string | null;
+  rawFields?: unknown;
+};
+
+function evalProfile(c: EvalCandidate) {
+  return {
+    name: c.name,
+    headline: c.headline ?? undefined,
+    summary: c.summary ?? undefined,
+    credentials: c.credentials ?? [],
+    topics: c.topics ?? [],
+    skills: c.skills ?? [],
+    experienceLevel: c.experienceLevel ?? undefined,
+    location: c.location ?? undefined,
+    answers:
+      c.rawFields && typeof c.rawFields === "object"
+        ? Object.fromEntries(
+            Object.entries(c.rawFields as Record<string, unknown>).map(([k, v]) => [k, String(v).slice(0, 500)])
+          )
+        : undefined,
+    notes: c.notes?.slice(0, 600),
+  };
+}
+
+// Judges a batch of candidates against the criteria. Batched internally to keep
+// each call small and reliable. Falls back to empty (caller keeps embedding
+// order) if the API is unavailable.
+export async function evaluateCandidates(
+  query: string,
+  criteria: QueryCriterion[],
+  candidates: EvalCandidate[]
+): Promise<Map<string, CandidateEvaluation>> {
+  const out = new Map<string, CandidateEvaluation>();
+  if (!client || criteria.length === 0 || candidates.length === 0) return out;
+
+  const BATCH = 6;
+  const batches: EvalCandidate[][] = [];
+  for (let i = 0; i < candidates.length; i += BATCH) batches.push(candidates.slice(i, i + BATCH));
+
+  await Promise.all(
+    batches.map(async (batch) => {
+      try {
+        const res = await client!.messages.create({
+          model: "claude-opus-4-8",
+          max_tokens: 4000,
+          output_config: { format: { type: "json_schema", schema: EVAL_SCHEMA }, effort: "low" },
+          system:
+            "You are a recruiter evaluating candidates against a search. For each candidate, judge every " +
+            "criterion: 'met', 'partial', or 'missing', with one line of concrete evidence drawn from their " +
+            "data (cite the specific program, role, publication, or answer). If there's no evidence, say so and " +
+            "mark 'missing' — never invent. Give an overall 0–100 score reflecting how many high-weight criteria " +
+            "are met. Echo each candidate's index.",
+          messages: [
+            {
+              role: "user",
+              content: JSON.stringify({
+                query,
+                criteria: criteria.map((c) => ({ key: c.key, label: c.label, description: c.description })),
+                candidates: batch.map((c, i) => ({ index: i, ...evalProfile(c) })),
+              }),
+            },
+          ],
+        });
+        const text = res.content.find((b) => b.type === "text")?.text;
+        if (!text) return;
+        const parsed = JSON.parse(text) as {
+          evaluations: (CandidateEvaluation & { index: number })[];
+        };
+        for (const e of parsed.evaluations) {
+          const c = batch[e.index];
+          if (c) out.set(c.id, { id: c.id, score: e.score, summary: e.summary, verdicts: e.verdicts ?? [] });
+        }
+      } catch {
+        // leave this batch unevaluated; caller falls back to retrieval order
+      }
+    })
+  );
+
+  return out;
+}
