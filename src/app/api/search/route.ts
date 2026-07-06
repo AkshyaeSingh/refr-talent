@@ -143,7 +143,7 @@ export async function POST(req: Request) {
     try {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
-        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true } } },
+        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
         orderBy: { createdAt: "desc" },
         take: 2000,
       });
@@ -224,7 +224,7 @@ export async function POST(req: Request) {
     try {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
-        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true } } },
+        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
         take: 2000,
       });
       const results = await semanticSearch(q, rows);
@@ -274,7 +274,7 @@ export async function POST(req: Request) {
     if (weighted) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
-        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true } } },
+        include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
         take: 1000,
       });
       const ranked = await rankCandidates(q, weighted, rows, 25);
@@ -334,7 +334,7 @@ export async function POST(req: Request) {
     orderBy: { createdAt: "desc" },
     include: {
       originOrg: { select: { name: true } },
-      org: { select: { id: true, name: true } },
+      org: { select: { id: true, name: true, slug: true } },
     },
     take: 1000,
   });

@@ -22,7 +22,7 @@ type Candidate = {
   summary?: string | null;
   cos?: number;
   verdicts?: { key: string; status: "met" | "partial" | "missing"; evidence: string }[];
-  org: { id: string; name: string };
+  org: { id: string; name: string; slug?: string };
   originOrg?: { name: string } | null;
   score: number;
   matchPct: number | null;
@@ -61,15 +61,28 @@ function candidateFacetValues(c: Candidate): Record<FacetKey, string[]> {
 
 // Detailed, realistic example searches that exercise the evaluated pipeline and
 // return useful, differentiated results (not one-word filters).
+const MOCK_ORG_SLUG = "mock-talent-org-demo";
+
+// Selectable options for the manual-filter panel (so it's real choices, not
+// blank text boxes). Credentials + focus areas filter results directly; role
+// and experience feed the ranking criteria.
+const CREDENTIAL_OPTIONS = [
+  "MATS", "ARENA", "SPAR", "MARS", "LASR Labs", "BlueDot / AISF", "EA university group",
+  "PhD", "first-author", "OSS", "AI safety org", "Alignment Forum", "Viral creator (100k+)", "Founder",
+];
+const FOCUS_OPTIONS = [
+  "Interpretability", "Evals", "Research", "Policy", "Communications", "Engineering",
+  "Operations", "Field-building",
+];
+const ROLE_OPTIONS = ["research", "policy", "engineering", "communications", "operations"];
+const EXPERIENCE_OPTIONS = ["Junior", "Mid", "Senior"];
+
 const EXAMPLES = [
   "Science communicators who can explain AI safety to a general audience — bonus for a large following",
   "Interpretability researchers with first-author papers, open to relocating to Berkeley or London",
   "Governance & policy people with DC experience who've been through BlueDot or a similar fellowship",
 ];
 
-function commaList(v: string): string[] {
-  return v.split(",").map((s) => s.trim()).filter(Boolean);
-}
 
 // Category colouring for credential pills (mirrors the results legend).
 const PROGRAM_CREDS = new Set([
@@ -259,6 +272,29 @@ function SearchWorkspace() {
       else next.add(id);
       return next;
     });
+  }
+
+  // Browse the whole accessible pool with no query, then open the filter panel
+  // so the user can narrow it (e.g. just MATS) with real options.
+  function browseAll() {
+    setQuery("");
+    setCriteria(EMPTY_CRITERIA);
+    setFiltersOpen(true);
+    runSearch({ query: "" });
+  }
+
+  // Apply the manual-filter panel: role/experience/location feed the ranking
+  // criteria; credentials + focus areas become hard client-side facet filters.
+  function applyManualFilters(c: Criteria, extras: { credentials: string[]; topics: string[] }) {
+    setCriteria(c);
+    setCriteriaOpen(false);
+    setFiltersOpen(true);
+    setFacets((prev) => ({
+      ...prev,
+      credential: new Set(extras.credentials),
+      topic: new Set(extras.topics),
+    }));
+    runSearch({ criteria: c });
   }
 
   // Read an uploaded criteria doc (.txt/.md) as the query and search on it.
@@ -491,6 +527,9 @@ function SearchWorkspace() {
                   title="Set filters manually"
                 >
                   <FilterIcon /> Manual filters{criteriaActive ? ` · ${criteriaCount}` : ""}
+                </button>
+                <button className="chip" onClick={browseAll} title="Browse the whole pool">
+                  Browse all
                 </button>
               </div>
               <button
@@ -735,6 +774,11 @@ function SearchWorkspace() {
                       >
                         {c.isMine ? "My pool" : c.org.name}
                       </span>
+                      {c.org.slug === MOCK_ORG_SLUG && (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          Sample profile
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-sm text-neutral-600">
                       {c.headline || [c.experienceLevel, c.location, c.audienceTier].filter(Boolean).join(" · ")}
@@ -809,12 +853,10 @@ function SearchWorkspace() {
       {criteriaOpen && (
         <CriteriaPanel
           initial={criteria}
+          initialCredentials={facets.credential}
+          initialTopics={facets.topic}
           onClose={() => setCriteriaOpen(false)}
-          onApply={(c) => {
-            setCriteria(c);
-            setCriteriaOpen(false);
-            runSearch({ criteria: c });
-          }}
+          onApply={applyManualFilters}
         />
       )}
     </div>
@@ -870,36 +912,56 @@ function SearchArrow() {
 
 function CriteriaPanel({
   initial,
+  initialCredentials,
+  initialTopics,
   onClose,
   onApply,
 }: {
   initial: Criteria;
+  initialCredentials: Set<string>;
+  initialTopics: Set<string>;
   onClose: () => void;
-  onApply: (c: Criteria) => void;
+  onApply: (c: Criteria, extras: { credentials: string[]; topics: string[] }) => void;
 }) {
-  const [skills, setSkills] = useState(initial.skills.join(", "));
-  const [roleInterest, setRoleInterest] = useState(initial.roleInterest.join(", "));
+  const [credentials, setCredentials] = useState<Set<string>>(new Set(initialCredentials));
+  const [topics, setTopics] = useState<Set<string>>(new Set(initialTopics));
+  const [roles, setRoles] = useState<Set<string>>(new Set(initial.roleInterest));
   const [experienceLevel, setExperienceLevel] = useState(initial.experienceLevel ?? "");
   const [location, setLocation] = useState(initial.location ?? "");
   const [remoteOk, setRemoteOk] = useState(initial.remoteOk ?? false);
 
+  function toggle<T>(set: Set<T>, setSet: (s: Set<T>) => void, v: T) {
+    const next = new Set(set);
+    if (next.has(v)) next.delete(v);
+    else next.add(v);
+    setSet(next);
+  }
+
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/20 p-6" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/20 p-6" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold">Manual filters</h2>
         <p className="mb-4 text-sm text-neutral-500">
-          Set specific criteria. Results are ranked by how well they fit.
+          Pick from real options to narrow the pool — great for browsing (e.g. just MATS alumni).
         </p>
-        <div className="flex flex-col gap-3">
-          <Field label="Skills (comma separated)">
-            <input className="input" value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="interpretability, RL" />
-          </Field>
-          <Field label="Role interest (comma separated)">
-            <input className="input" value={roleInterest} onChange={(e) => setRoleInterest(e.target.value)} placeholder="research, policy" />
-          </Field>
-          <Field label="Experience level">
-            <input className="input" value={experienceLevel} onChange={(e) => setExperienceLevel(e.target.value)} placeholder="Senior" />
-          </Field>
+        <div className="flex flex-col gap-4">
+          <ChipGroup label="Credentials" options={CREDENTIAL_OPTIONS} selected={credentials} onToggle={(v) => toggle(credentials, setCredentials, v)} />
+          <ChipGroup label="Focus areas" options={FOCUS_OPTIONS} selected={topics} onToggle={(v) => toggle(topics, setTopics, v)} />
+          <ChipGroup label="Role interest" options={ROLE_OPTIONS} selected={roles} onToggle={(v) => toggle(roles, setRoles, v)} />
+          <div>
+            <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-400">Experience</div>
+            <div className="flex flex-wrap gap-1.5">
+              {EXPERIENCE_OPTIONS.map((x) => (
+                <button
+                  key={x}
+                  className={`chip ${experienceLevel === x ? "chip-active" : ""}`}
+                  onClick={() => setExperienceLevel(experienceLevel === x ? "" : x)}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+          </div>
           <Field label="Location">
             <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Berkeley" />
           </Field>
@@ -913,18 +975,46 @@ function CriteriaPanel({
           <button
             className="btn-primary"
             onClick={() =>
-              onApply({
-                skills: commaList(skills),
-                roleInterest: commaList(roleInterest),
-                experienceLevel: experienceLevel.trim() || undefined,
-                location: location.trim() || undefined,
-                remoteOk: remoteOk || undefined,
-              })
+              onApply(
+                {
+                  skills: initial.skills,
+                  roleInterest: [...roles],
+                  experienceLevel: experienceLevel.trim() || undefined,
+                  location: location.trim() || undefined,
+                  remoteOk: remoteOk || undefined,
+                },
+                { credentials: [...credentials], topics: [...topics] }
+              )
             }
           >
-            Apply & rank
+            Apply filters
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ChipGroup({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: string[];
+  selected: Set<string>;
+  onToggle: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-400">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button key={o} className={`chip ${selected.has(o) ? "chip-active" : ""}`} onClick={() => onToggle(o)}>
+            {o}
+          </button>
+        ))}
       </div>
     </div>
   );

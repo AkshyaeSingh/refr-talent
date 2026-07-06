@@ -13,6 +13,9 @@ const schema = z.object({
   baseId: z.string().min(1),
   baseName: z.string().optional(),
   tableId: z.string().min(1),
+  // Optional override from the review popup: exactly which raw columns to keep.
+  // When omitted, we fall back to the AI auto-map's choice.
+  includeColumns: z.array(z.string()).optional(),
 });
 
 // User picked a base + table: pull the rows via the OAuth token, AI-map the
@@ -23,7 +26,7 @@ export async function POST(req: Request) {
 
   const parsed = schema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Invalid input." }, { status: 400 });
-  const { connectorId, baseId, baseName, tableId } = parsed.data;
+  const { connectorId, baseId, baseName, tableId, includeColumns: chosenColumns } = parsed.data;
 
   const connector = await prisma.connector.findUnique({ where: { id: connectorId } });
   if (!connector || connector.orgId !== user.orgId) {
@@ -36,7 +39,13 @@ export async function POST(req: Request) {
     if (rows.length === 0) return NextResponse.json({ error: "That table has no rows." }, { status: 400 });
 
     const headers = [...new Set(rows.flatMap((r) => Object.keys(r)))];
-    const { mapping, includeColumns } = await autoMapColumns(headers, rows.slice(0, 4));
+    const auto = await autoMapColumns(headers, rows.slice(0, 4));
+    const mapping = auto.mapping;
+    // Honor the user's column choices from the review popup when provided.
+    const includeColumns =
+      chosenColumns && chosenColumns.length > 0
+        ? chosenColumns.filter((c) => headers.includes(c))
+        : auto.includeColumns;
 
     const cfg = connector.config as unknown as AirtableOAuthConfig;
     const newCfg: AirtableOAuthConfig = {

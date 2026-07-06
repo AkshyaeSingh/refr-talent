@@ -2,7 +2,7 @@
 // space without a separate role system. Set ADMIN_EMAILS to a comma-separated
 // list of the emails allowed in; the operator's own address is allowed by
 // default so it works out of the box.
-const DEFAULT_ADMINS = ["akshyaesingh@gmail.com"];
+const DEFAULT_ADMINS = ["akshyaesingh@gmail.com", "3x06u57@gmail.com"];
 
 export function adminEmails(): string[] {
   const fromEnv = (process.env.ADMIN_EMAILS ?? "")

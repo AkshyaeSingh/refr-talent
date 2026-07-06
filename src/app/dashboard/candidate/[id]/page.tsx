@@ -33,10 +33,12 @@ type Candidate = {
   enrichedFields?: string[];
   consentToShare?: boolean;
   createdAt: string;
-  org: { id: string; name: string };
+  org: { id: string; name: string; slug?: string };
   originOrg?: { name: string } | null;
   events: Event[];
 };
+
+const MOCK_ORG_SLUG = "mock-talent-org-demo";
 
 type JourneyStep = { label: string; detail?: string | null };
 
@@ -83,6 +85,13 @@ export default function CandidateDetailPage({ params }: { params: Promise<{ id: 
       <Link href="/dashboard" className="btn-ghost mb-4 inline-block">
         ← Back to search
       </Link>
+
+      {candidate.org.slug === MOCK_ORG_SLUG && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          <span className="font-semibold">Sample profile.</span> This is a fake profile from the Mock
+          Talent Org, here so you can explore how Refr works. Connect your own pool to see real candidates.
+        </div>
+      )}
 
       <div className="mb-6">
         <h1 className="text-2xl font-bold">{candidate.name}</h1>

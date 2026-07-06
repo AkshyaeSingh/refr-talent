@@ -147,14 +147,66 @@ const ORG_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-// Pulls a site's homepage, strips it to readable text, and asks Claude to
-// derive an org profile (name, one-liner, type, focus areas). Degrades to null
-// on any failure so the onboarding form just stays manually editable.
+// Pull a JSON object out of free-text model output (handles ```json fences and
+// surrounding prose).
+function extractJson<T>(text: string): T | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1] : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  try {
+    return JSON.parse(candidate) as T;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOrg(parsed: DerivedOrg | null): DerivedOrg | null {
+  if (!parsed) return null;
+  const orgType =
+    parsed.orgType === "fellowship" || parsed.orgType === "hiring" || parsed.orgType === "both"
+      ? parsed.orgType
+      : null;
+  return {
+    name: parsed.name?.trim() || null,
+    description: parsed.description?.trim() || null,
+    orgType,
+    focusAreas: Array.isArray(parsed.focusAreas) ? parsed.focusAreas.slice(0, 8) : [],
+  };
+}
+
+// Derive an org profile (name, one-liner, type, focus areas) from a website.
+// Primary path uses Claude's web_search tool, which actually browses the live
+// site (handling JS-rendered pages and sites that block plain server fetches);
+// falls back to a raw fetch + strip if web search is unavailable. Degrades to
+// null on any failure so the onboarding form just stays manually editable.
 export async function deriveOrgFromWebsite(url: string): Promise<DerivedOrg | null> {
   if (!client) return null;
-  let text: string;
+  const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+
+  // ── Primary: web search ──────────────────────────────────────────────────
   try {
-    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const response = await client.messages.create({
+      model: SEARCH_MODEL,
+      max_tokens: 1500,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
+      system:
+        "You profile organizations for a talent-sharing platform used by AI-safety fellowships and hiring orgs. " +
+        "Research the given website, then output ONLY a JSON object with keys: name (string), description " +
+        "(1-2 sentence neutral summary), orgType ('fellowship' | 'hiring' | 'both' | null), and focusAreas " +
+        "(3-8 short Title Case talent/domain tags). Base everything on what you find; use null / [] when unsure.",
+      messages: [{ role: "user", content: `Research this organization and profile it: ${normalized}` }],
+    });
+    const out = response.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { text: string }).text)
+      .join("\n");
+    const derived = normalizeOrg(extractJson<DerivedOrg>(out));
+    if (derived && (derived.description || derived.focusAreas.length > 0)) return derived;
+  } catch {
+    // fall through to the raw-fetch approach
+  }
+
+  // ── Fallback: fetch the homepage and summarize its text ──────────────────
+  try {
     const res = await fetch(normalized, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; RefrBot/1.0)" },
       signal: AbortSignal.timeout(10_000),
@@ -162,8 +214,7 @@ export async function deriveOrgFromWebsite(url: string): Promise<DerivedOrg | nu
     });
     if (!res.ok) return null;
     const html = await res.text();
-    // Strip scripts/styles, drop tags, collapse whitespace; cap length.
-    text = html
+    const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]+>/g, " ")
@@ -172,11 +223,7 @@ export async function deriveOrgFromWebsite(url: string): Promise<DerivedOrg | nu
       .trim()
       .slice(0, 8000);
     if (text.length < 40) return null;
-  } catch {
-    return null;
-  }
 
-  try {
     const response = await client.messages.create({
       model: "claude-opus-4-8",
       max_tokens: 1024,
@@ -188,14 +235,7 @@ export async function deriveOrgFromWebsite(url: string): Promise<DerivedOrg | nu
       messages: [{ role: "user", content: `Website text:\n\n${text}` }],
     });
     const out = response.content.find((b) => b.type === "text")?.text;
-    if (!out) return null;
-    const parsed = JSON.parse(out) as DerivedOrg;
-    return {
-      name: parsed.name?.trim() || null,
-      description: parsed.description?.trim() || null,
-      orgType: parsed.orgType ?? null,
-      focusAreas: Array.isArray(parsed.focusAreas) ? parsed.focusAreas.slice(0, 8) : [],
-    };
+    return out ? normalizeOrg(JSON.parse(out) as DerivedOrg) : null;
   } catch {
     return null;
   }

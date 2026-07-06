@@ -12,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     where: { id },
     include: {
       originOrg: { select: { name: true } },
-      org: { select: { id: true, name: true } },
+      org: { select: { id: true, name: true, slug: true } },
       events: { orderBy: { createdAt: "asc" } },
     },
   });
