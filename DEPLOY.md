@@ -56,6 +56,32 @@ The app is multi-tenant: each program **signs up its own org** at `/signup`,
 imports its pool, and connects with others via Friends / Quick Share links.
 Just send them the domain. No per-org setup needed.
 
+## Public marketing domain (`/landing`), without buying a domain
+`/landing` is a standalone marketing page + waitlist form, meant to be public,
+while the real app domain (login/signup/dashboard) stays unpublicized. Railway
+gives every **service** its own free `*.up.railway.app` domain, so the cheapest
+way to get a second public URL is a second service from the same repo:
+
+1. In the same Railway project: **New → GitHub Repo** → pick this repo again.
+   Railway creates a second service from the same code.
+2. On that service's **Variables**, set:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (same DB — the waitlist
+     table needs to land in the same place as the main app)
+   - `LANDING_ONLY` = `true`
+   (No `AUTH_SECRET` / `ANTHROPIC_API_KEY` / `TOKEN_ENCRYPTION_KEY` / Airtable
+   vars needed — the routes that use them are blocked on this service.)
+3. **Settings → Networking → Generate Domain** on this second service → a new
+   free `<random>-production.up.railway.app` URL. Share *this* one publicly.
+4. `src/middleware.ts` enforces the split: when `LANDING_ONLY=true`, only
+   `/landing` and `/api/waitlist` are served — every other path (including
+   `/`, `/login`, `/signup`, `/dashboard`) redirects to `/landing`. The main
+   app service is untouched (`LANDING_ONLY` unset there), so nothing about
+   login/signup changes for approved orgs on the original domain.
+
+This is real route-level isolation (enforced in code), not just an unlinked
+URL — but the original app domain is still reachable by anyone who has it, so
+treat it as "not publicized," not "secret."
+
 ## Notes / production considerations
 - **Search works even if the local ML models don't load.** Evaluated search is
   Claude-based; the embedding shortlist degrades to recency if `onnxruntime`
