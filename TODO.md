@@ -9,6 +9,13 @@ cd ~/projects/talent-flow && npm run dev      # http://localhost:3000
 Postgres: Homebrew postgresql@16, db `talent_flow`. Login `alice@mats.org` / `password123` (MATS).
 AI key is in `.env` (ANTHROPIC_API_KEY). **After any schema change you must restart `npm run dev`** — a long-running dev server holds a stale Prisma client and will 500 on new fields.
 
+## Latest: embedding semantic search (done, verified, pushed 5ed3b0c)
+- **Bi-encoder dense retrieval + cross-encoder rerank** (Transformers.js, all-MiniLM-L6-v2 + ms-marco), fully local/no-API, is now the **primary** search over real DB candidates. `src/lib/search/{models,embeddings,pipeline}.ts`, wired in `/api/search` (`searchMode: "semantic"`), consent-gated, keyword/Claude fallback if models fail.
+- Per-candidate **embedding cache** keyed by content hash (only changed candidates re-embed). Brute-force cosine now; **ANN (hnswlib-node / pgvector) is the documented scale swap point** in `embeddings.ts`.
+- Result cards match the reference UI: rank, big match %, **Program/Org/Focus/Degree** colour-coded pills + legend, summary, muted skills, `cos → rerank` transparency line.
+- ⚠️ **Cold start**: first query downloads ~90MB of models (then cached/warm). **Deploy note**: onnxruntime needs enough memory/timeout — a Vercel serverless function may struggle; consider a long-timeout function, a persistent Node server, or running embeddings on a separate service for production.
+- Verified: tsc+eslint clean, `searchMode: semantic`, e.g. "interpretability researcher" → Dana Lee 78% (cos 0.35 → rerank 0.78).
+
 ## Repo + deploying
 - Pushed to **github.com/AkshyaeSingh/refr-talent** (`origin/main`). Everything is on `main`.
 - Agent branches preserved locally: `claude/zen-hermann-f8347a` (Airtable), `claude/stoic-bhabha-adfd1d` (embedding search). Their worktrees live under `.claude/worktrees/` (ignored by eslint; remove with `git worktree remove` when done).
