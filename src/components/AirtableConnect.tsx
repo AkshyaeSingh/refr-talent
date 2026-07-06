@@ -30,16 +30,37 @@ function AirtableConnectInner({ onImported }: { onImported?: () => void }) {
   }, []);
 
   // Just came back from the OAuth redirect with a connector id → start the picker.
+  // Otherwise (fresh page load, or a reload that dropped the redirect's query
+  // params before the base/table was picked) check for a connector that's
+  // still mid-setup and resume the picker for it, so it's never left stranded
+  // with no way to finish short of the raw "Sync now" button.
   useEffect(() => {
     if (status === "connected" && connectorFromUrl) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to the OAuth redirect query param
       setConnectorId(connectorFromUrl);
       loadBases(connectorFromUrl);
-    } else if (status === "error") {
-      setErr(params.get("message") ?? "Airtable connection failed.");
-    } else if (status === "unconfigured") {
-      setErr("Airtable OAuth isn't configured on this server yet (see .env.example). You can still connect with a token below.");
+      return;
     }
+    if (status === "error") {
+      setErr(params.get("message") ?? "Airtable connection failed.");
+      return;
+    }
+    if (status === "unconfigured") {
+      setErr("Airtable OAuth isn't configured on this server yet (see .env.example). You can still connect with a token below.");
+      return;
+    }
+    fetch("/api/connectors")
+      .then((r) => r.json())
+      .then((d) => {
+        const pending = ((d.connectors ?? []) as { id: string; type: string; needsSetup?: boolean }[]).find(
+          (c) => c.type === "AIRTABLE" && c.needsSetup
+        );
+        if (pending) {
+          setConnectorId(pending.id);
+          loadBases(pending.id);
+        }
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, connectorFromUrl]);
 

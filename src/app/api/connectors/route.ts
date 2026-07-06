@@ -13,12 +13,15 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  // Never leak stored tokens to the client.
+  // Never leak stored tokens (or encrypted OAuth tokens) to the client.
   const safe = connectors.map((c) => {
     const config = (c.config ?? {}) as Record<string, unknown>;
-    const { token: _token, ...rest } = config;
+    const { token: _token, accessToken: _at, refreshToken: _rt, ...rest } = config;
     void _token;
-    return { ...c, config: rest, hasToken: Boolean(config.token) };
+    void _at;
+    void _rt;
+    const needsSetup = c.type === "AIRTABLE" && Boolean(config.oauth) && !config.baseId;
+    return { ...c, config: rest, hasToken: Boolean(config.token), needsSetup };
   });
 
   return NextResponse.json({ connectors: safe });

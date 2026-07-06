@@ -11,6 +11,7 @@ type Connector = {
   status: "ACTIVE" | "ERROR" | "NEVER_SYNCED";
   lastSyncedAt: string | null;
   lastError: string | null;
+  needsSetup?: boolean;
 };
 
 type Kind = "csv" | "airtable" | "typeform";
@@ -106,11 +107,15 @@ export default function ImportPanel({
                     )}
                   </div>
                   <div className="text-xs text-neutral-500">
-                    {c.lastSyncedAt ? `Last synced ${new Date(c.lastSyncedAt).toLocaleString()}` : "Never synced"}
+                    {c.needsSetup
+                      ? "Choose a base & table above to finish connecting"
+                      : c.lastSyncedAt
+                        ? `Last synced ${new Date(c.lastSyncedAt).toLocaleString()}`
+                        : "Never synced"}
                     {c.lastError ? ` · ${c.lastError}` : ""}
                   </div>
                 </div>
-                {c.type !== "CSV" && (
+                {c.type !== "CSV" && !c.needsSetup && (
                   <button className="btn-secondary" onClick={() => sync(c.id)}>
                     Sync now
                   </button>
