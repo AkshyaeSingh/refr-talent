@@ -16,6 +16,18 @@ AI key is in `.env` (ANTHROPIC_API_KEY). **After any schema change you must rest
 - ⚠️ **Cold start**: first query downloads ~90MB of models (then cached/warm). **Deploy note**: onnxruntime needs enough memory/timeout — a Vercel serverless function may struggle; consider a long-timeout function, a persistent Node server, or running embeddings on a separate service for production.
 - Verified: tsc+eslint clean, `searchMode: semantic`, e.g. "interpretability researcher" → Dana Lee 78% (cos 0.35 → rerank 0.78).
 
+## Production deploy (Railway) — ready, see DEPLOY.md
+- **`next build` passes** (all routes compile). App is deploy-clean.
+- Config committed: `railway.json` (Nixpacks, `/login` healthcheck), `package.json` (`postinstall`→prisma generate, `build`→prisma generate+next build, `start`→migrate deploy+next start on `$PORT`, node ≥20.9).
+- **Host = Railway + its Postgres addon** (chosen because the app runs local ML models + needs a warm process; not serverless-friendly). Full steps in `DEPLOY.md`.
+- Search degrades gracefully if the embedding models can't load (evaluated path is Claude-based; shortlist falls back to recency) — so it runs on modest instances.
+- **Remaining = user actions** (need Railway login): connect GitHub repo → add Postgres + `DATABASE_URL=${{Postgres.DATABASE_URL}}` → set `AUTH_SECRET`/`ANTHROPIC_API_KEY`/`TOKEN_ENCRYPTION_KEY` → deploy → generate domain → add prod URL + `AIRTABLE_*` and redeploy.
+
+## Latest: evaluated search (Juicebox-style, done, pushed)
+- Search now: derive criteria from query → embedding shortlist → **LLM judges each candidate per criterion** (met/partial/missing + cited evidence) + 0–100 score. Cards render evidence rows + criteria chips. `deriveCriteria`/`evaluateCandidates` in `lib/ai.ts`, primary path in `/api/search` (`searchMode: "evaluated"`).
+- Fixes the "everyone at 0%" problem (raw cross-encoder score was miscalibrated); embedding cross-encoder stays as the no-API fallback.
+- Verified on Frame data: "science communicators…" → creators rank above researchers with real evidence.
+
 ## Repo + deploying
 - Pushed to **github.com/AkshyaeSingh/refr-talent** (`origin/main`). Everything is on `main`.
 - Agent branches preserved locally: `claude/zen-hermann-f8347a` (Airtable), `claude/stoic-bhabha-adfd1d` (embedding search). Their worktrees live under `.claude/worktrees/` (ignored by eslint; remove with `git worktree remove` when done).
