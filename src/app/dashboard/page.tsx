@@ -125,6 +125,7 @@ function SearchWorkspace() {
   const [aiInfo, setAiInfo] = useState<{ criteria: Criteria; keywords: string[] } | null>(null);
   const [aiDoc, setAiDoc] = useState<{ required: string[]; preferred: string[]; domains: string[] } | null>(null);
   const [aiOn, setAiOn] = useState(false);
+  const [searchMode, setSearchMode] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [queryCriteria, setQueryCriteria] = useState<{ key: string; label: string }[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -191,6 +192,7 @@ function SearchWorkspace() {
       setAiDoc(data.aiDoc ?? null);
       setQueryCriteria(data.criteria ?? []);
       setAiOn(Boolean(data.aiAvailable));
+      setSearchMode(data.searchMode ?? null);
       setReasons(data.reasons ?? {});
       if (data.myOrgId) setMyOrgId(data.myOrgId);
     },
@@ -218,6 +220,18 @@ function SearchWorkspace() {
         });
       });
   }, []);
+
+  // "View table" from a connected source → browse the whole of my own pool.
+  const viewParam = params.get("view");
+  useEffect(() => {
+    if (viewParam !== "mine") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to the ?view=mine deep link
+    setPoolsTouched(true);
+    setPools(new Set(["me"]));
+    setFiltersOpen(true);
+    runSearch({ pools: new Set(["me"]), query: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewParam]);
 
   // Load a saved search when arriving via ?s=<id>.
   useEffect(() => {
@@ -479,7 +493,7 @@ function SearchWorkspace() {
   );
 
   return (
-    <div className={`mx-auto max-w-3xl px-6 ${centered ? "flex min-h-[70vh] flex-col justify-center" : "py-6"}`}>
+    <div className={`mx-auto px-6 ${centered ? "max-w-3xl flex min-h-[70vh] flex-col justify-center" : "max-w-6xl py-6"}`}>
       {centered && (
         <h1 className="mb-8 text-center text-4xl font-bold tracking-tight">Who are you looking for?</h1>
       )}
@@ -492,7 +506,7 @@ function SearchWorkspace() {
             : "sticky top-0 z-20 -mx-6 border-b border-neutral-200 bg-white/95 px-6 py-3 backdrop-blur"
         }
       >
-        <div className={centered ? "" : "mx-auto flex max-w-3xl items-center gap-2"}>
+        <div className={centered ? "" : "mx-auto flex max-w-6xl items-center gap-2"}>
           {centered && <div className="mb-3">{poolSelector}</div>}
           {!centered && poolSelector}
 
@@ -740,7 +754,10 @@ function SearchWorkspace() {
           )}
           {!loading && candidates.length > 0 && (
             <div className="flex items-center justify-between text-xs text-neutral-400">
-              <span>Showing {visibleCandidates.length} of {candidates.length}</span>
+              <span className="flex items-center gap-2">
+                Showing {visibleCandidates.length} of {candidates.length}
+                {searchMode && <SearchModeBadge mode={searchMode} />}
+              </span>
               <span className="flex items-center gap-3">
                 <LegendDot className="border-orange-300 bg-orange-50" label="Program" />
                 <LegendDot className="border-purple-300 bg-purple-50" label="Org" />
@@ -861,6 +878,21 @@ function SearchWorkspace() {
       )}
     </div>
   );
+}
+
+// Small transparency badge showing which pipeline produced the results, so it's
+// obvious when a search used the accurate AI path vs. fell back to plain
+// listing/keyword matching.
+function SearchModeBadge({ mode }: { mode: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    evaluated: { label: "AI evaluated", cls: "border-purple-200 bg-purple-50 text-purple-700" },
+    semantic: { label: "Semantic", cls: "border-blue-200 bg-blue-50 text-blue-700" },
+    "criteria-doc": { label: "Criteria doc", cls: "border-blue-200 bg-blue-50 text-blue-700" },
+    keyword: { label: "Keyword (basic)", cls: "border-amber-200 bg-amber-50 text-amber-700" },
+    browse: { label: "Browsing", cls: "border-neutral-200 bg-neutral-50 text-neutral-500" },
+  };
+  const m = map[mode] ?? { label: mode, cls: "border-neutral-200 bg-neutral-50 text-neutral-500" };
+  return <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${m.cls}`}>{m.label}</span>;
 }
 
 function LegendDot({ className, label }: { className: string; label: string }) {

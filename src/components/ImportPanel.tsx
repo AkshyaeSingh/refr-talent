@@ -131,11 +131,18 @@ export default function ImportPanel({
                     {c.lastError ? ` · ${c.lastError}` : ""}
                   </div>
                 </div>
-                {c.type !== "CSV" && !c.needsSetup && (
-                  <button className="btn-secondary" onClick={() => sync(c.id)}>
-                    Sync now
-                  </button>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  {!c.needsSetup && (
+                    <a href="/dashboard?view=mine" className="btn-secondary">
+                      View table
+                    </a>
+                  )}
+                  {c.type !== "CSV" && !c.needsSetup && (
+                    <button className="btn-secondary" onClick={() => sync(c.id)}>
+                      Sync now
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

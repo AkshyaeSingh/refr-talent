@@ -291,6 +291,7 @@ export async function POST(req: Request) {
         aiDoc: weighted,
         aiAvailable,
         reasons,
+        searchMode: "criteria-doc",
       });
     }
   }
@@ -380,5 +381,8 @@ export async function POST(req: Request) {
     ai: aiCriteria ? { criteria: aiCriteria, keywords: textFilter } : null,
     aiAvailable,
     reasons,
+    // "browse" when there's no query at all (just listing/filtering the pool);
+    // "keyword" when a query fell through every smart path to plain matching.
+    searchMode: q ? "keyword" : "browse",
   });
 }
