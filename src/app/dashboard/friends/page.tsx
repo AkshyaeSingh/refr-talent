@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import QuickShare from "@/components/QuickShare";
 
+const MOCK_ORG_SLUG = "mock-talent-org-demo";
+
 type Org = { id: string; name: string; slug: string; orgType?: string | null; focusAreas?: string[] };
 type Connection = {
   id: string;
@@ -64,7 +66,7 @@ export default function FriendsPage() {
   const outgoing = connections.filter((c) => c.status === "PENDING" && c.requestedById === myOrgId);
   const discover = orgs.filter((o) => !activeIds.has(o.id));
 
-  async function request(targetOrgId: string) {
+  async function request(targetOrgId: string, targetOrg?: Org) {
     setStatus(null);
     const res = await fetch("/api/connections", {
       method: "POST",
@@ -74,6 +76,14 @@ export default function FriendsPage() {
     if (!res.ok) {
       const data = await res.json();
       setStatus(data.error);
+    } else if (targetOrg?.slug === MOCK_ORG_SLUG) {
+      // The demo org auto-accepts server-side after ~5s; poll a bit past that
+      // so the notification lands even if the request landed slightly late.
+      setStatus(`Request sent to ${targetOrg.name} — waiting for them to accept…`);
+      setTimeout(async () => {
+        await load();
+        setStatus(`🎉 ${targetOrg.name} accepted your connection request! You can now search their pool.`);
+      }, 5500);
     }
     await load();
   }
@@ -188,7 +198,7 @@ export default function FriendsPage() {
         )}
         {discover.map((o) => (
           <Card key={o.id} org={o} poolSize={pools[o.id] ?? 0}>
-            <button className="btn-primary w-full" onClick={() => request(o.id)}>
+            <button className="btn-primary w-full" onClick={() => request(o.id, o)}>
               ⊕ Connect
             </button>
           </Card>
@@ -226,13 +236,23 @@ function Card({
   return (
     <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
       <div
-        className="flex aspect-square items-center justify-center"
+        className="relative flex aspect-square items-center justify-center"
         style={{ backgroundColor: tileColor(org.name) }}
       >
         <span className="text-5xl font-bold text-white">{initials}</span>
+        {org.slug === MOCK_ORG_SLUG && (
+          <span className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-700">
+            Demo
+          </span>
+        )}
       </div>
       <div className="p-3">
         <div className="truncate font-semibold">{org.name}</div>
+        {org.slug === MOCK_ORG_SLUG && (
+          <p className="mb-1 text-xs text-neutral-500">
+            Try search without connecting your own pool first.
+          </p>
+        )}
         <div className="mb-2 text-xs text-neutral-500">
           {poolSize} candidate{poolSize === 1 ? "" : "s"}
           {org.orgType ? ` · ${org.orgType}` : ""}

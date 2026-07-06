@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { ensureMockOrg } from "@/lib/mockOrg";
+
+const MOCK_AUTO_APPROVE_MS = 5000;
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  await ensureMockOrg();
 
   const [connections, orgs, poolCounts] = await Promise.all([
     prisma.orgConnection.findMany({
@@ -66,6 +70,19 @@ export async function POST(req: Request) {
       status: "PENDING",
     },
   });
+
+  // The demo org "accepts" on its own after a short delay so a new org can
+  // see the whole connect → search flow without a real partner on the other
+  // end. Safe as a plain setTimeout: this app runs as a persistent Node
+  // process (not a serverless function that freezes after the response).
+  const mockOrgId = await ensureMockOrg();
+  if (targetOrgId === mockOrgId) {
+    setTimeout(() => {
+      prisma.orgConnection
+        .update({ where: { id: connection.id }, data: { status: "APPROVED", respondedAt: new Date() } })
+        .catch(() => {});
+    }, MOCK_AUTO_APPROVE_MS);
+  }
 
   return NextResponse.json({ connection });
 }
