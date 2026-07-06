@@ -11,13 +11,14 @@ import {
   generateCodeVerifier,
   generateState,
   getAirtableOAuthConfig,
+  requestOrigin,
 } from "@/lib/airtable/oauth";
 
 // Starts the Airtable OAuth flow: stashes a CSRF state + PKCE verifier in
 // short-lived cookies, then redirects the (logged-in) user to Airtable.
 export async function GET(req: Request) {
   const user = await getCurrentUser();
-  const base = new URL(req.url).origin;
+  const base = requestOrigin(req);
   if (!user) return NextResponse.redirect(new URL("/login", base));
   if (!airtableConfigured()) {
     return NextResponse.redirect(new URL("/dashboard/integrations?airtable=unconfigured", base));

@@ -8,6 +8,7 @@ import {
   OAUTH_VERIFIER_COOKIE,
   exchangeCodeForToken,
   getAirtableOAuthConfig,
+  requestOrigin,
   whoAmI,
 } from "@/lib/airtable/oauth";
 
@@ -15,7 +16,7 @@ import {
 // + PKCE verifier, exchange the code for tokens, and store them (encrypted) on
 // a Connector for the logged-in org.
 export async function GET(req: Request) {
-  const base = new URL(req.url).origin;
+  const base = requestOrigin(req);
   const { searchParams } = new URL(req.url);
 
   const err = searchParams.get("error");

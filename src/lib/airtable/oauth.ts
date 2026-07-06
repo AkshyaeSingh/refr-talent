@@ -21,6 +21,20 @@ export interface AirtableOAuthConfig {
   scopes: string;
 }
 
+// Behind Railway's (and most PaaS) reverse proxies, the raw request the app
+// sees is addressed to the internal host:port (e.g. localhost:8080), not the
+// public domain the browser used. Prefer the standard forwarded headers so
+// redirects/OAuth state stay on the public origin.
+export function requestOrigin(req: Request): string {
+  const headers = req.headers;
+  const forwardedHost = headers.get("x-forwarded-host");
+  if (forwardedHost) {
+    const proto = headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+    return `${proto}://${forwardedHost.split(",")[0].trim()}`;
+  }
+  return new URL(req.url).origin;
+}
+
 export function airtableConfigured(): boolean {
   return Boolean(process.env.AIRTABLE_CLIENT_ID && process.env.AIRTABLE_REDIRECT_URI);
 }
