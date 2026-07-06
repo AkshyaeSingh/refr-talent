@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Papa from "papaparse";
 import { CANDIDATE_FIELDS, type CandidateFieldKey, type FieldMapping } from "@/lib/candidateFields";
+import { SourceLogo, type SourceId } from "@/components/SourceLogos";
 
 type Connector = {
   id: string;
@@ -14,12 +15,22 @@ type Connector = {
   needsSetup?: boolean;
 };
 
-type Kind = "csv" | "airtable" | "typeform";
+type SourceCard = {
+  id: SourceId;
+  name: string;
+  blurb: string;
+  state: "csv" | "oauth" | "soon";
+};
 
-const SOURCES: { kind: Kind; name: string; blurb: string; color: string; mark: string }[] = [
-  { kind: "csv", name: "CSV / Spreadsheet", blurb: "Drag in any export — we map the columns for you.", color: "bg-neutral-900", mark: "⌗" },
-  { kind: "airtable", name: "Airtable", blurb: "Connect a base; stays in sync as applicants land.", color: "bg-[#fcb400]", mark: "A" },
-  { kind: "typeform", name: "Typeform", blurb: "Sync form responses automatically.", color: "bg-neutral-800", mark: "T" },
+// The catalogue of talent sources. CSV is a one-shot upload; Airtable is a live
+// OAuth connection; the rest are on the roadmap (and gather demand via the
+// "suggest" card below).
+const SOURCES: SourceCard[] = [
+  { id: "csv", name: "CSV / Spreadsheet", blurb: "Drag in any export — we map the columns for you.", state: "csv" },
+  { id: "airtable", name: "Airtable", blurb: "Authorize once; pick a base and keep it in sync.", state: "oauth" },
+  { id: "typeform", name: "Typeform", blurb: "Sync form responses as applicants arrive.", state: "soon" },
+  { id: "googleforms", name: "Google Forms", blurb: "Pull responses straight from your form.", state: "soon" },
+  { id: "notion", name: "Notion", blurb: "Turn a Notion database into a live pool.", state: "soon" },
 ];
 
 export default function ImportPanel({
@@ -29,7 +40,8 @@ export default function ImportPanel({
   onImported?: () => void;
   showSources?: boolean;
 }) {
-  const [open, setOpen] = useState<Kind | null>(null);
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -45,16 +57,12 @@ export default function ImportPanel({
 
   function done(msg: string) {
     setStatus(`${msg} ✨ Analyzing profiles…`);
-    setOpen(null);
+    setCsvOpen(false);
     load();
     onImported?.();
     // Auto-build AI profiles (credentials, topics, links, consent) for the
     // freshly imported candidates. Non-blocking.
-    fetch("/api/enrich", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    })
+    fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
       .then((r) => r.json())
       .then((d) => {
         if (d.ok) setStatus(`${msg} Analyzed ${d.enriched} profiles.`);
@@ -72,20 +80,28 @@ export default function ImportPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SOURCES.map((s) => (
-          <button
-            key={s.kind}
-            onClick={() => setOpen(s.kind)}
-            className="card flex flex-col gap-2 text-left transition-colors hover:border-purple-300"
-          >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${s.color} text-lg font-bold text-white`}>
-              {s.mark}
-            </div>
-            <div className="font-semibold">{s.name}</div>
-            <p className="text-xs leading-5 text-neutral-500">{s.blurb}</p>
-          </button>
+          <SourceTile
+            key={s.id}
+            source={s}
+            onCsv={() => setCsvOpen(true)}
+          />
         ))}
+
+        {/* Suggest an integration */}
+        <button
+          onClick={() => setSuggestOpen(true)}
+          className="flex flex-col items-start gap-2 rounded-2xl border border-dashed border-neutral-300 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-50/40"
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-300 text-2xl font-light text-neutral-400">
+            +
+          </span>
+          <div className="font-semibold">Suggest an integration</div>
+          <p className="text-xs leading-5 text-neutral-500">
+            Tell us which tool your applicants live in and we&apos;ll prioritize it.
+          </p>
+        </button>
       </div>
 
       {status && <p className="text-sm text-purple-700">{status}</p>}
@@ -126,26 +142,131 @@ export default function ImportPanel({
         </div>
       )}
 
-      {open && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-black/20 p-6" onClick={() => setOpen(null)}>
-          <div
-            className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold">
-                {open === "csv" ? "Import a spreadsheet" : `Connect ${open === "airtable" ? "Airtable" : "Typeform"}`}
-              </h2>
-              <button className="btn-ghost" onClick={() => setOpen(null)}>✕</button>
-            </div>
-            {open === "csv" ? (
-              <CsvImport onDone={() => done("Imported into your pool.")} />
-            ) : (
-              <ApiConnect type={open === "airtable" ? "AIRTABLE" : "TYPEFORM"} onDone={(n) => done(`Connected — pulled ${n} applicants.`)} />
-            )}
-          </div>
-        </div>
+      {csvOpen && (
+        <Modal title="Import a spreadsheet" onClose={() => setCsvOpen(false)}>
+          <CsvImport onDone={() => done("Imported into your pool.")} />
+        </Modal>
       )}
+
+      {suggestOpen && (
+        <Modal title="Suggest an integration" onClose={() => setSuggestOpen(false)}>
+          <SuggestIntegration
+            onDone={() => {
+              setSuggestOpen(false);
+              setStatus("Thanks — we logged your request. 🙌");
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function SourceTile({ source, onCsv }: { source: SourceCard; onCsv: () => void }) {
+  const soon = source.state === "soon";
+  const inner = (
+    <>
+      <div className="flex w-full items-start justify-between">
+        <SourceLogo id={source.id} />
+        {soon && (
+          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+            Coming soon
+          </span>
+        )}
+      </div>
+      <div className="font-semibold">{source.name}</div>
+      <p className="text-xs leading-5 text-neutral-500">{source.blurb}</p>
+      {!soon && (
+        <span className="mt-1 text-xs font-semibold text-purple-700">
+          {source.state === "oauth" ? "Connect with Airtable →" : "Import a file →"}
+        </span>
+      )}
+    </>
+  );
+
+  const cardClass =
+    "flex flex-col gap-2 rounded-2xl border border-neutral-200 p-4 text-left transition-colors";
+
+  if (soon) {
+    return <div className={`${cardClass} cursor-default opacity-70`}>{inner}</div>;
+  }
+  if (source.state === "oauth") {
+    return (
+      <a href="/api/oauth/airtable/authorize" className={`${cardClass} hover:border-purple-300`}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <button onClick={onCsv} className={`${cardClass} hover:border-purple-300`}>
+      {inner}
+    </button>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-black/20 p-6" onClick={onClose}>
+      <div
+        className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">{title}</h2>
+          <button className="btn-ghost" onClick={onClose}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SuggestIntegration({ onDone }: { onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!name.trim()) return setError("Which tool would you like?");
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/integration-suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, reason }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      return setError(d.error ?? "Couldn't send that. Try again.");
+    }
+    onDone();
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-neutral-500">
+        What tool do your applicants live in? We use these to decide what to build next.
+      </p>
+      <label className="flex flex-col gap-1 text-sm font-medium">
+        Tool
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Fillout, Greenhouse, Notion…" />
+      </label>
+      <label className="flex flex-col gap-1 text-sm font-medium">
+        Why (optional)
+        <textarea
+          className="input"
+          rows={3}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. our whole cohort applies through a Fillout form"
+        />
+      </label>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button className="btn-primary w-fit" disabled={busy} onClick={submit}>
+        {busy ? "Sending…" : "Send suggestion"}
+      </button>
     </div>
   );
 }
@@ -278,58 +399,4 @@ function CsvImport({ onDone }: { onDone: () => void }) {
       )}
     </div>
   );
-}
-
-function ApiConnect({ type, onDone }: { type: "AIRTABLE" | "TYPEFORM"; onDone: (n: number) => void }) {
-  const [label, setLabel] = useState("");
-  const [token, setToken] = useState("");
-  const [baseId, setBaseId] = useState("");
-  const [tableId, setTableId] = useState("");
-  const [formId, setFormId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setError(null);
-    setBusy(true);
-    const body =
-      type === "AIRTABLE"
-        ? { type, label: label || "Airtable", token, baseId, tableId }
-        : { type, label: label || "Typeform", token, formId };
-    const res = await fetch("/api/connectors/auto", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    setBusy(false);
-    if (!res.ok) return setError(typeof data.error === "string" ? data.error : "Could not connect.");
-    onDone((data.created ?? 0) + (data.updated ?? 0));
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-neutral-500">
-        Paste your credentials — we pull the applicants and map the columns automatically.
-      </p>
-      <Field label="Label"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={`${type === "AIRTABLE" ? "Airtable" : "Typeform"} — Cohort 8`} /></Field>
-      <Field label="Access token"><input className="input" value={token} onChange={(e) => setToken(e.target.value)} placeholder="pat… / tfp…" /></Field>
-      {type === "AIRTABLE" ? (
-        <>
-          <Field label="Base ID"><input className="input" value={baseId} onChange={(e) => setBaseId(e.target.value)} placeholder="app…" /></Field>
-          <Field label="Table ID or name"><input className="input" value={tableId} onChange={(e) => setTableId(e.target.value)} placeholder="Applicants" /></Field>
-        </>
-      ) : (
-        <Field label="Form ID"><input className="input" value={formId} onChange={(e) => setFormId(e.target.value)} placeholder="AbCdEf" /></Field>
-      )}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button className="btn-primary w-fit" disabled={busy} onClick={submit}>
-        {busy ? "Connecting…" : "Connect & sync"}
-      </button>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="flex flex-col gap-1 text-sm font-medium">{label}{children}</label>;
 }

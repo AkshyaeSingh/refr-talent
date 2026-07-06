@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
 import ContourBackground from "@/components/ContourBackground";
@@ -21,9 +21,19 @@ const FOCUS_AREAS = [
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+
+  // Profile fields (some AI-derived from the website, all editable).
+  const [website, setWebsite] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [orgType, setOrgType] = useState("");
   const [areas, setAreas] = useState<Set<string>>(new Set());
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMsg, setEnrichMsg] = useState<string | null>(null);
   const [imported, setImported] = useState(false);
+  const logoRef = useRef<HTMLInputElement>(null);
 
   function toggleArea(a: string) {
     setAreas((prev) => {
@@ -34,11 +44,66 @@ export default function OnboardingPage() {
     });
   }
 
+  async function autoFill() {
+    if (!website.trim()) return setEnrichMsg("Add your website link first.");
+    setEnriching(true);
+    setEnrichMsg("✨ Reading your site and filling in what we can…");
+    try {
+      const res = await fetch("/api/org/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ website }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEnrichMsg(data.error ?? "Couldn't read that site — fill the details in below.");
+      } else {
+        const d = data.derived as {
+          name: string | null;
+          description: string | null;
+          orgType: string | null;
+          focusAreas: string[];
+        };
+        if (d.name) setName(d.name);
+        if (d.description) setDescription(d.description);
+        if (d.orgType) setOrgType(d.orgType);
+        if (d.focusAreas?.length) {
+          // Merge derived areas with our canonical chips (Title Case match).
+          setAreas(new Set(d.focusAreas.map((a) => a.trim()).filter(Boolean)));
+        }
+        setEnrichMsg("✓ Filled from your site. Review and edit anything below.");
+      }
+    } catch {
+      setEnrichMsg("Something went wrong — fill the details in below.");
+    }
+    setEnriching(false);
+  }
+
+  function onLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 400_000) {
+      setEnrichMsg("That logo is a bit large — please use an image under 400KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoUrl(String(reader.result));
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
   async function saveDetails() {
     await fetch("/api/org", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orgType: orgType || undefined, focusAreas: [...areas] }),
+      body: JSON.stringify({
+        name: name.trim() || undefined,
+        orgType: orgType || undefined,
+        focusAreas: [...areas],
+        website: website.trim() || undefined,
+        description: description.trim() || undefined,
+        logoUrl: logoUrl || undefined,
+      }),
     });
   }
 
@@ -78,20 +143,72 @@ export default function OnboardingPage() {
                 </div>
               ))}
             </div>
-            <p className="text-sm font-semibold text-purple-900">
-              {TAGLINE_A} {TAGLINE_B}
-            </p>
+            <p className="text-sm font-semibold text-purple-900">{TAGLINE_A} {TAGLINE_B}</p>
             <button className="btn-primary w-full" onClick={() => setStep(1)}>Get started</button>
           </div>
         )}
 
-        {/* Step 1 — quick details */}
+        {/* Step 1 — profile: auto-fill from website + logo, editable */}
         {step === 1 && (
           <div className="flex flex-col gap-5">
             <div>
-              <h1 className="text-xl font-semibold">Tell friends who you are</h1>
-              <p className="text-sm text-neutral-500">Optional, but it helps orgs decide to connect.</p>
+              <h1 className="text-xl font-semibold">Set up your org profile</h1>
+              <p className="text-sm text-neutral-500">
+                Drop your website and we&apos;ll fill in what we can — you can edit everything.
+              </p>
             </div>
+
+            {/* Website + auto-fill */}
+            <div>
+              <div className="mb-2 text-sm font-medium">Website or program link</div>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="https://your-program.org"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); autoFill(); } }}
+                />
+                <button className="btn-secondary whitespace-nowrap" disabled={enriching} onClick={autoFill}>
+                  {enriching ? "Reading…" : "✨ Auto-fill"}
+                </button>
+              </div>
+              {enrichMsg && <p className="mt-1.5 text-xs text-purple-700">{enrichMsg}</p>}
+            </div>
+
+            {/* Logo + name */}
+            <div className="flex items-center gap-4">
+              <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={onLogo} />
+              <button
+                onClick={() => logoRef.current?.click()}
+                className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 text-xs text-neutral-400 transition-colors hover:border-purple-400"
+                title="Upload your logo"
+              >
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="logo" className="h-full w-full object-cover" />
+                ) : (
+                  "Logo"
+                )}
+              </button>
+              <label className="flex flex-1 flex-col gap-1 text-sm font-medium">
+                Org name
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your org / program" />
+              </label>
+            </div>
+
+            {/* Description */}
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              One-line description
+              <textarea
+                className="input"
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What your org does and who it serves."
+              />
+            </label>
+
             <div>
               <div className="mb-2 text-sm font-medium">What kind of org are you?</div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -109,22 +226,21 @@ export default function OnboardingPage() {
                 ))}
               </div>
             </div>
+
             <div>
               <div className="mb-2 text-sm font-medium">What talent do you work with?</div>
               <div className="flex flex-wrap gap-2">
-                {FOCUS_AREAS.map((a) => (
+                {[...new Set([...FOCUS_AREAS, ...areas])].map((a) => (
                   <button key={a} onClick={() => toggleArea(a)} className={`chip ${areas.has(a) ? "chip-active" : ""}`}>
                     {a}
                   </button>
                 ))}
               </div>
             </div>
+
             <div className="flex gap-2">
               <button className="btn-secondary" onClick={() => setStep(0)}>Back</button>
-              <button
-                className="btn-primary flex-1"
-                onClick={async () => { await saveDetails(); setStep(2); }}
-              >
+              <button className="btn-primary flex-1" onClick={async () => { await saveDetails(); setStep(2); }}>
                 Continue
               </button>
             </div>
@@ -137,8 +253,7 @@ export default function OnboardingPage() {
             <div>
               <h1 className="text-xl font-semibold">Bring your talent pool in</h1>
               <p className="text-sm text-neutral-500">
-                Pick a source — we&apos;ll read it and map the columns automatically. No spreadsheets to
-                wrangle.
+                Pick a source — we&apos;ll read it and map the columns automatically. No spreadsheets to wrangle.
               </p>
             </div>
             <ImportPanel showSources={false} onImported={() => setImported(true)} />

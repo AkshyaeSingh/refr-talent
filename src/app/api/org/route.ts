@@ -13,6 +13,10 @@ const schema = z.object({
   name: z.string().min(2).max(100).optional(),
   orgType: z.enum(["fellowship", "hiring", "both"]).optional(),
   focusAreas: z.array(z.string()).max(20).optional(),
+  website: z.string().max(300).optional(),
+  description: z.string().max(2000).optional(),
+  // data: URL of the uploaded logo. Capped to keep the row small.
+  logoUrl: z.string().max(500_000).optional(),
 });
 
 export async function PATCH(req: Request) {

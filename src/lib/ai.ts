@@ -101,6 +101,97 @@ export async function parseQuery(query: string): Promise<ParsedQuery | null> {
   }
 }
 
+// ── Org profile from a website ──────────────────────────────────────────────
+
+export type DerivedOrg = {
+  name: string | null;
+  description: string | null;
+  orgType: "fellowship" | "hiring" | "both" | null;
+  focusAreas: string[];
+};
+
+const ORG_SCHEMA = {
+  type: "object",
+  properties: {
+    name: {
+      type: ["string", "null"],
+      description: "The organization or program's name, exactly as it presents itself. Null if unclear.",
+    },
+    description: {
+      type: ["string", "null"],
+      description: "A concise 1-2 sentence summary of what this org/program does and who it serves, in a neutral third-person voice.",
+    },
+    orgType: {
+      type: ["string", "null"],
+      enum: ["fellowship", "hiring", "both", null],
+      description:
+        "'fellowship' if it runs cohorts/programs that produce alumni, 'hiring' if it's an employer sourcing candidates, 'both' if it does both, null if unclear.",
+    },
+    focusAreas: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "3-8 short focus-area tags describing the talent/domains involved (e.g. 'Interpretability', 'Policy', 'Engineering', 'Field-building'). Title Case.",
+    },
+  },
+  required: ["name", "description", "orgType", "focusAreas"],
+  additionalProperties: false,
+} as const;
+
+// Pulls a site's homepage, strips it to readable text, and asks Claude to
+// derive an org profile (name, one-liner, type, focus areas). Degrades to null
+// on any failure so the onboarding form just stays manually editable.
+export async function deriveOrgFromWebsite(url: string): Promise<DerivedOrg | null> {
+  if (!client) return null;
+  let text: string;
+  try {
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const res = await fetch(normalized, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; RefrBot/1.0)" },
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    // Strip scripts/styles, drop tags, collapse whitespace; cap length.
+    text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&[a-z]+;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 8000);
+    if (text.length < 40) return null;
+  } catch {
+    return null;
+  }
+
+  try {
+    const response = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 1024,
+      output_config: { format: { type: "json_schema", schema: ORG_SCHEMA }, effort: "low" },
+      system:
+        "You profile organizations for a talent-sharing platform used by AI-safety fellowships and hiring orgs. " +
+        "Given the visible text of an org's website, extract a concise, factual profile. " +
+        "Never invent details that aren't supported by the text; use null / empty when unsure.",
+      messages: [{ role: "user", content: `Website text:\n\n${text}` }],
+    });
+    const out = response.content.find((b) => b.type === "text")?.text;
+    if (!out) return null;
+    const parsed = JSON.parse(out) as DerivedOrg;
+    return {
+      name: parsed.name?.trim() || null,
+      description: parsed.description?.trim() || null,
+      orgType: parsed.orgType ?? null,
+      focusAreas: Array.isArray(parsed.focusAreas) ? parsed.focusAreas.slice(0, 8) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Column auto-mapping ─────────────────────────────────────────────────────
 
 export type AutoMap = {

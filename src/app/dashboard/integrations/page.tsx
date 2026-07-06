@@ -33,13 +33,13 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-6 py-8">
       <div className="mb-6 flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Integrations</h1>
+          <h1 className="text-2xl font-bold">Connect your talent sources</h1>
           <p className="mt-1 text-sm text-neutral-500">
             Bring applicants in from wherever they already live. Connected sources keep your pool
-            up to date automatically.
+            up to date automatically — pick one to get started.
           </p>
         </div>
         {poolSize !== null && (
@@ -47,7 +47,8 @@ export default function IntegrationsPage() {
         )}
       </div>
 
-      <div className="mb-6">
+      {/* Airtable "finish setup" surface — only appears mid-connection */}
+      <div className="mb-4 empty:hidden">
         <AirtableConnect onImported={() => window.location.reload()} />
       </div>
 

@@ -98,34 +98,29 @@ function AirtableConnectInner({ onImported }: { onImported?: () => void }) {
     onImported?.();
   }
 
-  const picking = connectorId && (bases || busy);
+  // The Airtable source tile (in ImportPanel) starts the OAuth flow, so this
+  // component is only the "finish setup" surface: it appears when we've come
+  // back from Airtable (or found a connection still mid-setup) and shows the
+  // base/table picker plus any status. It renders nothing when idle.
+  const active = Boolean(connectorId) || Boolean(msg) || Boolean(err);
+  if (!active) return null;
 
   return (
-    <section className="card">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-[#fcb400] text-[10px] font-bold text-white">A</span>
-            Connect Airtable (one click)
-          </h2>
-          <p className="text-xs text-neutral-500">
-            Authorize with Airtable — no API keys. Pick a base and table; we map the columns and keep
-            it in sync.
-          </p>
-        </div>
-        {!picking && (
-          <a href="/api/oauth/airtable/authorize" className="btn-primary whitespace-nowrap">
-            Connect with Airtable
-          </a>
-        )}
-      </div>
+    <section className="card border-purple-200 bg-purple-50/30">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <span className="flex h-5 w-5 items-center justify-center rounded bg-[#fcb400] text-[10px] font-bold text-white">A</span>
+        Finish connecting Airtable
+      </h2>
 
-      {msg && <p className="mt-3 text-sm text-purple-700">{msg}</p>}
-      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      {msg && <p className="mt-2 text-sm text-purple-700">{msg}</p>}
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      {connectorId && !bases && !err && (
+        <p className="mt-2 text-sm text-neutral-500">Loading your bases…</p>
+      )}
 
       {/* Base picker */}
       {connectorId && bases && !tables && (
-        <div className="mt-4">
+        <div className="mt-3">
           <div className="mb-2 text-xs font-medium text-neutral-500">Choose a base</div>
           <div className="flex flex-wrap gap-2">
             {bases.length === 0 && <p className="text-sm text-neutral-400">No bases shared with the app.</p>}
@@ -140,7 +135,7 @@ function AirtableConnectInner({ onImported }: { onImported?: () => void }) {
 
       {/* Table picker */}
       {connectorId && tables && (
-        <div className="mt-4">
+        <div className="mt-3">
           <div className="mb-2 text-xs font-medium text-neutral-500">Choose a table to import</div>
           <div className="flex flex-wrap gap-2">
             {tables.map((t) => (

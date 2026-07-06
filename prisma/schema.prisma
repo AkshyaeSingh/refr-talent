@@ -18,16 +18,19 @@ enum UserRole {
 }
 
 model Org {
-  id         String   @id @default(cuid())
-  name       String
-  slug       String   @unique
-  orgType    String? // fellowship | hiring | both
-  focusAreas String[] @default([])
-  logoUrl    String? // data URL or hosted URL of the org's logo
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  orgType     String? // fellowship | hiring | both
+  focusAreas  String[] @default([])
+  logoUrl     String? // data URL or hosted URL of the org's logo
+  website     String? // the org's homepage/program link
+  description String? // one-paragraph summary (often AI-derived from the website)
+  createdAt   DateTime @default(now())
 
-  users         User[]
-  importBatches ImportBatch[]
+  users                  User[]
+  importBatches          ImportBatch[]
+  integrationSuggestions IntegrationSuggestion[]
 
   candidates           Candidate[] @relation("OrgCandidates")
   originatedCandidates Candidate[] @relation("CandidateOriginOrg")
@@ -248,6 +251,19 @@ model Connector {
   lastSyncedAt DateTime?
   lastError    String?
   createdAt    DateTime        @default(now())
+
+  @@index([orgId])
+}
+
+// A user-submitted request for an integration Refr doesn't support yet, with
+// the reason they want it. Surfaced to us to prioritize the connector roadmap.
+model IntegrationSuggestion {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  name      String // the tool they want connected (e.g. "Fillout", "Notion")
+  reason    String? // why they want it
+  createdAt DateTime @default(now())
 
   @@index([orgId])
 }
