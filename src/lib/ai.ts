@@ -924,7 +924,9 @@ export async function deriveCriteria(query: string): Promise<QueryCriterion[]> {
     const res = await client.messages.create({
       model: SEARCH_MODEL,
       max_tokens: 1024,
-      output_config: { format: { type: "json_schema", schema: CRITERIA_SCHEMA }, effort: "low" },
+      // Haiku 4.5 rejects the `effort` param (400: "This model does not
+      // support the effort parameter") — omit it for the fast search model.
+      output_config: { format: { type: "json_schema", schema: CRITERIA_SCHEMA } },
       system:
         "You turn a talent-search request into a short list of concrete, independently checkable " +
         "criteria a recruiter would score candidates on. Prefer the hard requirements and the most " +
@@ -934,7 +936,8 @@ export async function deriveCriteria(query: string): Promise<QueryCriterion[]> {
     const text = res.content.find((b) => b.type === "text")?.text;
     if (!text) return [];
     return (JSON.parse(text) as { criteria: QueryCriterion[] }).criteria ?? [];
-  } catch {
+  } catch (err) {
+    console.error("deriveCriteria failed:", err);
     return [];
   }
 }
@@ -1034,7 +1037,8 @@ export async function evaluateCandidates(
         const res = await client!.messages.create({
           model: SEARCH_MODEL,
           max_tokens: 4000,
-          output_config: { format: { type: "json_schema", schema: EVAL_SCHEMA }, effort: "low" },
+          // Haiku 4.5 rejects the `effort` param — omit it for this model.
+          output_config: { format: { type: "json_schema", schema: EVAL_SCHEMA } },
           system:
             "You are a recruiter evaluating candidates against a search. For each candidate, judge every " +
             "criterion: 'met', 'partial', or 'missing', with one line of concrete evidence drawn from their " +
@@ -1061,8 +1065,9 @@ export async function evaluateCandidates(
           const c = batch[e.index];
           if (c) out.set(c.id, { id: c.id, score: e.score, summary: e.summary, verdicts: e.verdicts ?? [] });
         }
-      } catch {
+      } catch (err) {
         // leave this batch unevaluated; caller falls back to retrieval order
+        console.error("evaluateCandidates batch failed:", err);
       }
     })
   );

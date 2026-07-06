@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { EMPTY_CRITERIA, isCriteriaEmpty, type Criteria } from "@/lib/criteria";
+import SearchProgressBar from "@/components/SearchProgressBar";
 
 type Candidate = {
   id: string;
@@ -540,6 +541,8 @@ function SearchWorkspace() {
           )}
         </div>
       </div>
+
+      <SearchProgressBar active={loading} />
 
       {/* Example searches */}
       {centered && (
