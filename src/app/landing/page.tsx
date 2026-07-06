@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import Logo from "@/components/Logo";
-import ContourBackground from "@/components/ContourBackground";
+import LandingBackground from "@/components/LandingBackground";
 import { ConnectAnimation, SearchAnimation } from "@/components/FeatureAnimation";
 import { ONE_LINER, PROBLEM, VALUE_POINTS, TAGLINE_A, TAGLINE_B } from "@/lib/marketing";
 
 export default function LandingPage() {
   return (
     <main className="relative min-h-screen">
-      <ContourBackground />
+      <LandingBackground />
 
       {/* Header */}
       <header className="relative mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
