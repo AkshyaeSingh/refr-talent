@@ -13,10 +13,14 @@ const NAV = [
   { href: "/dashboard/integrations", label: "Integrations", icon: ConnectorsIcon },
 ];
 
-export default function Sidebar({ orgName }: { orgName: string }) {
+export default function Sidebar({ orgName, isAdmin = false }: { orgName: string; isAdmin?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const [searches, setSearches] = useState<SavedSearch[]>([]);
+
+  const nav = isAdmin
+    ? [...NAV, { href: "/dashboard/admin", label: "Admin", icon: AdminIcon }]
+    : NAV;
 
   const loadSearches = useCallback(async () => {
     const res = await fetch("/api/searches");
@@ -46,7 +50,7 @@ export default function Sidebar({ orgName }: { orgName: string }) {
       </div>
 
       <nav className="flex flex-col gap-1 px-3">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
           return (
@@ -133,6 +137,13 @@ function ConnectorsIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 2v6M12 22v-6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M22 12h-6" />
+    </svg>
+  );
+}
+function AdminIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z" />
     </svg>
   );
 }

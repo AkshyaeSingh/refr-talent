@@ -31,6 +31,7 @@ model Org {
   users                  User[]
   importBatches          ImportBatch[]
   integrationSuggestions IntegrationSuggestion[]
+  feedback               Feedback[]
 
   candidates           Candidate[] @relation("OrgCandidates")
   originatedCandidates Candidate[] @relation("CandidateOriginOrg")
@@ -268,6 +269,21 @@ model WaitlistEntry {
   message     String?
   status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
   createdAt   DateTime @default(now())
+}
+
+// In-app feedback from the help widget. Stored for the admin view and emailed
+// to the operator instantly (when email is configured).
+model Feedback {
+  id        String   @id @default(cuid())
+  orgId     String?
+  org       Org?     @relation(fields: [orgId], references: [id])
+  userEmail String?
+  userName  String?
+  message   String
+  path      String? // where in the app they were when they wrote it
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 // A user-submitted request for an integration Refr doesn't support yet, with

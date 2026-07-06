@@ -31,6 +31,18 @@ The repo is already configured for this:
 | `ANTHROPIC_API_KEY` | your `sk-ant-…` key (powers evaluated search + enrichment) |
 | `TOKEN_ENCRYPTION_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 
+Optional but recommended:
+| Variable | Value |
+|---|---|
+| `ADMIN_EMAILS` | comma-separated emails allowed into `/dashboard/admin` (your own address is already allowed by default) |
+| `RESEND_API_KEY` | a [Resend](https://resend.com) API key — enables instant email on new feedback |
+| `EMAIL_FROM` | a verified Resend sender, e.g. `Refr <notifications@yourdomain>` (defaults to Resend's test sender) |
+| `ADMIN_EMAIL` | where feedback notifications go (defaults to `akshyaesingh@gmail.com`) |
+
+Without `RESEND_API_KEY`, feedback is still captured — it just shows up in the
+admin space instead of emailing. The admin space (`/dashboard/admin`) is only
+visible to logged-in users whose email is in the admin allowlist.
+
 Airtable vars come after you have a public URL (step 5).
 
 ### 4. Deploy + get the URL
