@@ -10,10 +10,12 @@ import { FlickeringGrid } from "@/components/ui/flickering-grid";
 //   background's look) — used behind a centered card.
 // - "diagonal-left": texture concentrated in the upper-left, fading out along
 //   a diagonal toward the bottom-right — used on the login page.
+// - "corners": two light panels, top-left and bottom-right only — used on the
+//   quick-share page.
 export default function FlickerBackground({
   variant = "vignette",
 }: {
-  variant?: "vignette" | "diagonal-left";
+  variant?: "vignette" | "diagonal-left" | "corners";
 }) {
   if (variant === "diagonal-left") {
     return (
@@ -25,6 +27,33 @@ export default function FlickerBackground({
             gridGap={6}
             color="#52525b"
             maxOpacity={0.34}
+            flickerChance={0.04}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "corners") {
+    return (
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden bg-white">
+        <div className="absolute -left-24 -top-24 h-[480px] w-[560px] [mask-image:radial-gradient(ellipse_at_top_left,black,transparent_75%)]">
+          <FlickeringGrid
+            className="size-full"
+            squareSize={4}
+            gridGap={7}
+            color="#71717a"
+            maxOpacity={0.14}
+            flickerChance={0.04}
+          />
+        </div>
+        <div className="absolute -bottom-24 -right-24 h-[480px] w-[560px] [mask-image:radial-gradient(ellipse_at_bottom_right,black,transparent_75%)]">
+          <FlickeringGrid
+            className="size-full"
+            squareSize={4}
+            gridGap={7}
+            color="#71717a"
+            maxOpacity={0.14}
             flickerChance={0.04}
           />
         </div>

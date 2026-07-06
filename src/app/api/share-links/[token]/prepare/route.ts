@@ -4,16 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { mapRowToCandidate } from "@/lib/candidateFields";
 import { EMPTY_WEIGHTED } from "@/lib/criteria";
 import { autoMapColumns, parseCriteriaDoc, rankCandidates } from "@/lib/ai";
-import {
-  fetchAirtableRows,
-  fetchTypeformRows,
-  type AirtableConfig,
-  type TypeformConfig,
-} from "@/lib/connectorSync";
+import { fetchAirtableRows, type AirtableConfig } from "@/lib/connectorSync";
+import { getQsToken } from "@/lib/airtable/quickShareSession";
 
-// Public — the giver (who need not have an account) uploads a CSV or connects a
-// source. We map the columns, normalize, and rank the rows against the asker's
-// criteria — WITHOUT storing anything. The giver reviews, then calls /submit.
+// Public — the giver (who need not have an account) uploads a CSV or connects
+// Airtable via OAuth. We map the columns, normalize, and rank the rows against
+// the asker's criteria — WITHOUT storing anything. The giver reviews, then
+// calls /submit. Airtable's token comes from the OAuth session cookie set by
+// /airtable/callback — never from the client.
 const schema = z.discriminatedUnion("source", [
   z.object({
     source: z.literal("csv"),
@@ -21,14 +19,8 @@ const schema = z.discriminatedUnion("source", [
   }),
   z.object({
     source: z.literal("airtable"),
-    token: z.string().min(1),
     baseId: z.string().min(1),
     tableId: z.string().min(1),
-  }),
-  z.object({
-    source: z.literal("typeform"),
-    token: z.string().min(1),
-    formId: z.string().min(1),
   }),
 ]);
 
@@ -48,19 +40,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     let rows: Record<string, string>[];
     if (input.source === "csv") {
       rows = input.rows;
-    } else if (input.source === "airtable") {
+    } else {
+      const accessToken = await getQsToken();
+      if (!accessToken) {
+        return NextResponse.json({ error: "Airtable session expired — reconnect." }, { status: 401 });
+      }
       rows = await fetchAirtableRows({
-        token: input.token,
+        token: accessToken,
         baseId: input.baseId,
         tableId: input.tableId,
         fieldMapping: {},
       } as AirtableConfig);
-    } else {
-      rows = await fetchTypeformRows({
-        token: input.token,
-        formId: input.formId,
-        fieldMapping: {},
-      } as TypeformConfig);
     }
     if (rows.length === 0) return NextResponse.json({ error: "No rows found." }, { status: 400 });
 

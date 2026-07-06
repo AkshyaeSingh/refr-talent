@@ -1,6 +1,7 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, use, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Papa from "papaparse";
 import Logo from "@/components/Logo";
@@ -8,6 +9,8 @@ import FlickerBackground from "@/components/FlickerBackground";
 import { VALUE_POINTS, TAGLINE_A, TAGLINE_B } from "@/lib/marketing";
 
 type LinkInfo = { title: string; criteriaText: string; askerOrgName: string; status: string };
+type Base = { id: string; name: string };
+type Table = { id: string; name: string };
 
 type Prepared = {
   id: string;
@@ -23,8 +26,9 @@ type Prepared = {
   [k: string]: unknown;
 };
 
-export default function SharePage({ params }: { params: Promise<{ token: string }> }) {
+function SharePageInner({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  const searchParams = useSearchParams();
   const [info, setInfo] = useState<LinkInfo | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [step, setStep] = useState<"intro" | "source" | "review" | "done">("intro");
@@ -34,7 +38,13 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ shared: number; skippedDuplicates: number } | null>(null);
-  const [connectKind, setConnectKind] = useState<"airtable" | "typeform" | null>(null);
+
+  // Airtable OAuth picker state (no account needed — see /api/share-links/[token]/airtable/*).
+  const [airtableBases, setAirtableBases] = useState<Base[] | null>(null);
+  const [airtableBaseId, setAirtableBaseId] = useState<string | null>(null);
+  const [airtableTables, setAirtableTables] = useState<Table[] | null>(null);
+  const [airtableErr, setAirtableErr] = useState<string | null>(null);
+  const [airtableUnconfigured, setAirtableUnconfigured] = useState(false);
 
   useEffect(() => {
     fetch(`/api/share-links/${token}`)
@@ -42,6 +52,34 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       .then(setInfo)
       .catch(() => setNotFound(true));
   }, [token]);
+
+  const loadAirtableBases = useCallback(async () => {
+    setBusy(true);
+    setAirtableErr(null);
+    const res = await fetch(`/api/share-links/${token}/airtable/bases`);
+    const d = await res.json();
+    setBusy(false);
+    if (!res.ok) return setAirtableErr(d.error ?? "Couldn't list bases.");
+    setAirtableBases(d.bases ?? []);
+    setStep("source");
+  }, [token]);
+
+  // Coming back from the OAuth redirect.
+  useEffect(() => {
+    const airtableStatus = searchParams.get("airtable");
+    if (airtableStatus === "connected") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to the OAuth redirect query param
+      setStep("source");
+      loadAirtableBases();
+    } else if (airtableStatus === "error") {
+      setAirtableErr(searchParams.get("message") ?? "Airtable connection failed.");
+      setStep("source");
+    } else if (airtableStatus === "unconfigured") {
+      setAirtableUnconfigured(true);
+      setStep("source");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function prepare(body: object) {
     setBusy(true);
@@ -56,7 +94,6 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
     if (!res.ok) return setError(data.error ?? "Could not read that source.");
     const cands: Prepared[] = data.candidates ?? [];
     setPrepared(cands);
-    // Pre-select strong fits so the giver starts from a good default.
     setSelected(new Set(cands.filter((c) => c.matchPct >= 70).map((c) => c.id)));
     setStep("review");
   }
@@ -68,6 +105,17 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       complete: (r) => prepare({ source: "csv", rows: r.data }),
       error: (e) => setError(e.message),
     });
+  }
+
+  async function pickBase(b: Base) {
+    setAirtableBaseId(b.id);
+    setBusy(true);
+    setAirtableErr(null);
+    const res = await fetch(`/api/share-links/${token}/airtable/tables?baseId=${b.id}`);
+    const d = await res.json();
+    setBusy(false);
+    if (!res.ok) return setAirtableErr(d.error ?? "Couldn't list tables.");
+    setAirtableTables(d.tables ?? []);
   }
 
   function toggle(id: string) {
@@ -123,9 +171,9 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       {step === "intro" && (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-neutral-600">
-            Share matching profiles from your applicant pool — upload a CSV or connect Airtable /
-            Typeform. We rank them against {info.askerOrgName}&apos;s criteria automatically; nothing
-            is stored until you choose who to send.
+            Share matching profiles from your applicant pool: upload a CSV or connect Airtable. We
+            rank them against {info.askerOrgName}&apos;s criteria automatically; nothing is stored
+            until you choose who to send.
           </p>
           <div className="flex flex-wrap gap-2 text-xs text-neutral-500">
             <span className="chip">✨ AI-ranked against the ask</span>
@@ -141,9 +189,15 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       {step === "source" && (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-neutral-600">
-            Upload a CSV or connect a source. Nothing is stored until you pick who to send.
+            Upload a CSV or connect Airtable. Nothing is stored until you pick who to send.
           </p>
-          {!connectKind ? (
+
+          {airtableUnconfigured && (
+            <p className="text-xs text-amber-700">Airtable isn&apos;t configured on this server yet.</p>
+          )}
+          {airtableErr && !airtableBases && <p className="text-sm text-red-600">{airtableErr}</p>}
+
+          {!airtableBases ? (
             <>
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500 hover:border-purple-400">
                 <span className="text-2xl">📄</span>
@@ -155,14 +209,49 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
                 />
               </label>
-              <div className="flex gap-2">
-                <button className="btn-secondary flex-1" onClick={() => setConnectKind("airtable")}>Connect Airtable</button>
-                <button className="btn-secondary flex-1" onClick={() => setConnectKind("typeform")}>Connect Typeform</button>
-              </div>
+              <a
+                href={`/api/share-links/${token}/airtable/authorize`}
+                className="btn-secondary flex items-center justify-center gap-2"
+              >
+                <span className="flex h-4 w-4 items-center justify-center rounded bg-[#fcb400] text-[9px] font-bold text-white">A</span>
+                Connect Airtable
+              </a>
             </>
           ) : (
-            <ConnectForm kind={connectKind} busy={busy} onCancel={() => setConnectKind(null)} onSubmit={(b) => prepare(b)} />
+            <div className="rounded-xl border border-neutral-200 p-4">
+              {!airtableTables ? (
+                <>
+                  <div className="mb-2 text-xs font-medium text-neutral-500">Choose a base</div>
+                  <div className="flex flex-wrap gap-2">
+                    {airtableBases.length === 0 && <p className="text-sm text-neutral-400">No bases shared with the app.</p>}
+                    {airtableBases.map((b) => (
+                      <button key={b.id} className="chip" disabled={busy} onClick={() => pickBase(b)}>
+                        {b.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-2 text-xs font-medium text-neutral-500">Choose a table to import</div>
+                  <div className="flex flex-wrap gap-2">
+                    {airtableTables.map((t) => (
+                      <button
+                        key={t.id}
+                        className="chip"
+                        disabled={busy}
+                        onClick={() => prepare({ source: "airtable", baseId: airtableBaseId, tableId: t.id })}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {airtableErr && <p className="mt-2 text-sm text-red-600">{airtableErr}</p>}
+            </div>
           )}
+
           {busy && <p className="text-sm text-neutral-500">✨ Reading and matching against the criteria…</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
@@ -203,7 +292,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
-            <button className="btn-secondary" onClick={() => { setStep("source"); setPrepared([]); }}>Back</button>
+            <button className="btn-secondary" onClick={() => { setStep("source"); setPrepared([]); setAirtableBases(null); setAirtableTables(null); }}>Back</button>
             <button className="btn-primary flex-1" disabled={busy || selected.size === 0} onClick={share}>
               {busy ? "Sharing…" : `Share ${selected.size} with ${info.askerOrgName}`}
             </button>
@@ -226,54 +315,11 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   );
 }
 
-function ConnectForm({
-  kind,
-  busy,
-  onCancel,
-  onSubmit,
-}: {
-  kind: "airtable" | "typeform";
-  busy: boolean;
-  onCancel: () => void;
-  onSubmit: (body: object) => void;
-}) {
-  const [token, setToken] = useState("");
-  const [baseId, setBaseId] = useState("");
-  const [tableId, setTableId] = useState("");
-  const [formId, setFormId] = useState("");
-
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4">
-      <input className="input" placeholder="Access token" value={token} onChange={(e) => setToken(e.target.value)} />
-      {kind === "airtable" ? (
-        <>
-          <input className="input" placeholder="Base ID (app…)" value={baseId} onChange={(e) => setBaseId(e.target.value)} />
-          <input className="input" placeholder="Table ID or name" value={tableId} onChange={(e) => setTableId(e.target.value)} />
-        </>
-      ) : (
-        <input className="input" placeholder="Form ID" value={formId} onChange={(e) => setFormId(e.target.value)} />
-      )}
-      <div className="flex gap-2">
-        <button className="btn-secondary" onClick={onCancel}>Back</button>
-        <button
-          className="btn-primary flex-1"
-          disabled={busy}
-          onClick={() =>
-            onSubmit(kind === "airtable" ? { source: "airtable", token, baseId, tableId } : { source: "typeform", token, formId })
-          }
-        >
-          Pull & match
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function Shell({ children, twoCol = false }: { children: React.ReactNode; twoCol?: boolean }) {
   if (!twoCol) {
     return (
-      <main className="relative min-h-screen px-4 py-12">
-        <FlickerBackground />
+      <main className="relative flex min-h-screen items-center justify-center px-4 py-12">
+        <FlickerBackground variant="corners" />
         <div className="mx-auto w-full max-w-xl">
           <div className="mb-4 flex justify-center">
             <Logo size={24} />
@@ -287,9 +333,9 @@ function Shell({ children, twoCol = false }: { children: React.ReactNode; twoCol
     );
   }
   return (
-    <main className="relative min-h-screen px-4 py-10">
-      <FlickerBackground />
-      <div className="mx-auto grid w-full max-w-5xl items-start gap-8 md:grid-cols-2">
+    <main className="relative flex min-h-screen items-center justify-center px-4 py-10">
+      <FlickerBackground variant="corners" />
+      <div className="mx-auto grid w-full max-w-5xl items-center gap-8 md:grid-cols-2">
         {children}
       </div>
     </main>
@@ -302,7 +348,7 @@ function MarketingRail() {
     <div className="md:sticky md:top-10">
       <Logo size={26} />
       <h1 className="mt-6 text-3xl font-bold leading-tight tracking-tight">
-        Share talent in a click — <span className="text-purple-700">no spreadsheets</span>.
+        Share talent in a click.
       </h1>
       <p className="mt-3 text-sm text-neutral-600">
         {TAGLINE_A} {TAGLINE_B}
@@ -331,5 +377,13 @@ function MarketingRail() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function SharePage({ params }: { params: Promise<{ token: string }> }) {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-sm text-neutral-500">Loading…</div>}>
+      <SharePageInner params={params} />
+    </Suspense>
   );
 }
