@@ -3,11 +3,27 @@ import { mapRowToCandidate, type FieldMapping } from "@/lib/candidateFields";
 
 type IngestResult = { created: number; updated: number };
 
+// Identifies a "share with partners" / "consent to share" style column name,
+// if the source has one. Used both to gate consent and to show the user, before
+// import, exactly which column we're reading consent from.
+export function findConsentColumn(headers: string[]): string | null {
+  for (const k of headers) {
+    const key = k.toLowerCase();
+    if (
+      (key.includes("shar") && (key.includes("partner") || key.includes("information") || key.includes("org"))) ||
+      (key.includes("consent") && key.includes("shar"))
+    ) {
+      return k;
+    }
+  }
+  return null;
+}
+
 // Best-effort consent detection from the raw row: if there's a "share with
 // partners" style question answered No, the candidate is not shareable across
 // orgs. Defaults to true when no such question exists. AI enrichment later
 // refines this, but we set it at the door so consent is never ignored.
-function detectConsent(row: Record<string, string>): boolean {
+export function detectConsent(row: Record<string, string>): boolean {
   for (const [k, v] of Object.entries(row)) {
     const key = k.toLowerCase();
     if (
