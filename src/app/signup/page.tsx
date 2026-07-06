@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import ContourBackground from "@/components/ContourBackground";
+import FlickerBackground from "@/components/FlickerBackground";
 
 export default function SignupPage() {
   const router = useRouter();
   const [orgName, setOrgName] = useState("");
+  const [website, setWebsite] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +23,7 @@ export default function SignupPage() {
     const res = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orgName, name, email, password }),
+      body: JSON.stringify({ orgName, website, name, email, password }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -36,7 +37,7 @@ export default function SignupPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center px-4 py-10">
-      <ContourBackground />
+      <FlickerBackground />
       <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white/80 p-8 shadow-xl backdrop-blur">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo size={28} />
@@ -55,6 +56,15 @@ export default function SignupPage() {
             onChange={(e) => setOrgName(e.target.value)}
             className="input"
             placeholder="MATS"
+          />
+        </Field>
+        <Field label="Organization website">
+          <input
+            required
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+            className="input"
+            placeholder="https://your-program.org"
           />
         </Field>
         <Field label="Your name">
@@ -88,7 +98,7 @@ export default function SignupPage() {
         </Field>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button type="submit" disabled={loading} className="btn-primary">
-          {loading ? "Creating…" : "Create account"}
+          {loading ? "Creating your org and reading your site…" : "Create account"}
         </button>
       </form>
         <p className="mt-6 text-center text-sm text-neutral-500">

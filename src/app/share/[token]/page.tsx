@@ -4,7 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import Logo from "@/components/Logo";
-import ContourBackground from "@/components/ContourBackground";
+import FlickerBackground from "@/components/FlickerBackground";
 import { VALUE_POINTS, TAGLINE_A, TAGLINE_B } from "@/lib/marketing";
 
 type LinkInfo = { title: string; criteriaText: string; askerOrgName: string; status: string };
@@ -273,7 +273,7 @@ function Shell({ children, twoCol = false }: { children: React.ReactNode; twoCol
   if (!twoCol) {
     return (
       <main className="relative min-h-screen px-4 py-12">
-        <ContourBackground />
+        <FlickerBackground />
         <div className="mx-auto w-full max-w-xl">
           <div className="mb-4 flex justify-center">
             <Logo size={24} />
@@ -288,7 +288,7 @@ function Shell({ children, twoCol = false }: { children: React.ReactNode; twoCol
   }
   return (
     <main className="relative min-h-screen px-4 py-10">
-      <ContourBackground />
+      <FlickerBackground />
       <div className="mx-auto grid w-full max-w-5xl items-start gap-8 md:grid-cols-2">
         {children}
       </div>

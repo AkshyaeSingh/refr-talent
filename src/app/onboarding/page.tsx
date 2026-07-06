@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
-import ContourBackground from "@/components/ContourBackground";
+import FlickerBackground from "@/components/FlickerBackground";
 import ImportPanel from "@/components/ImportPanel";
 import { ONE_LINER, PROBLEM, VALUE_POINTS, TAGLINE_A, TAGLINE_B } from "@/lib/marketing";
 
@@ -21,8 +21,10 @@ const FOCUS_AREAS = [
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [profileLoading, setProfileLoading] = useState(true);
 
-  // Profile fields (some AI-derived from the website, all editable).
+  // Profile fields — pre-filled from signup (org name, website) and from the
+  // AI website read that already ran during account creation; all editable.
   const [website, setWebsite] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -35,6 +37,32 @@ export default function OnboardingPage() {
   const [imported, setImported] = useState(false);
   const logoRef = useRef<HTMLInputElement>(null);
 
+  // Load whatever's already on the org (filled at signup) so this step opens
+  // pre-populated instead of asking the user to redo work.
+  useEffect(() => {
+    fetch("/api/org")
+      .then((r) => r.json())
+      .then((data) => {
+        const o = data.org as {
+          name?: string;
+          website?: string | null;
+          description?: string | null;
+          orgType?: string | null;
+          focusAreas?: string[];
+          logoUrl?: string | null;
+        } | undefined;
+        if (o) {
+          if (o.name) setName(o.name);
+          if (o.website) setWebsite(o.website);
+          if (o.description) setDescription(o.description);
+          if (o.orgType) setOrgType(o.orgType);
+          if (o.focusAreas?.length) setAreas(new Set(o.focusAreas));
+          if (o.logoUrl) setLogoUrl(o.logoUrl);
+        }
+      })
+      .finally(() => setProfileLoading(false));
+  }, []);
+
   function toggleArea(a: string) {
     setAreas((prev) => {
       const next = new Set(prev);
@@ -44,7 +72,9 @@ export default function OnboardingPage() {
     });
   }
 
-  async function autoFill() {
+  // Secondary action — only needed if they change the website and want fresh
+  // suggestions; the initial fill already happened automatically at signup.
+  async function reFetch() {
     if (!website.trim()) return setEnrichMsg("Add your website link first.");
     setEnriching(true);
     setEnrichMsg("✨ Reading your site and filling in what we can…");
@@ -64,14 +94,10 @@ export default function OnboardingPage() {
           orgType: string | null;
           focusAreas: string[];
         };
-        if (d.name) setName(d.name);
         if (d.description) setDescription(d.description);
         if (d.orgType) setOrgType(d.orgType);
-        if (d.focusAreas?.length) {
-          // Merge derived areas with our canonical chips (Title Case match).
-          setAreas(new Set(d.focusAreas.map((a) => a.trim()).filter(Boolean)));
-        }
-        setEnrichMsg("✓ Filled from your site. Review and edit anything below.");
+        if (d.focusAreas?.length) setAreas(new Set(d.focusAreas.map((a) => a.trim()).filter(Boolean)));
+        setEnrichMsg("✓ Updated from your site. Review and edit anything below.");
       }
     } catch {
       setEnrichMsg("Something went wrong — fill the details in below.");
@@ -114,7 +140,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="relative min-h-screen px-4 py-12">
-      <ContourBackground />
+      <FlickerBackground />
       <div className="mx-auto w-full max-w-2xl rounded-2xl border border-neutral-200 bg-white/90 p-8 shadow-xl backdrop-blur">
         <div className="mb-6 flex items-center justify-between">
           <Logo size={24} />
@@ -148,17 +174,19 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 1 — profile: auto-fill from website + logo, editable */}
+        {/* Step 1 — profile: pre-filled from signup + website read, editable */}
         {step === 1 && (
           <div className="flex flex-col gap-5">
             <div>
-              <h1 className="text-xl font-semibold">Set up your org profile</h1>
+              <h1 className="text-xl font-semibold">Review your org profile</h1>
               <p className="text-sm text-neutral-500">
-                Drop your website and we&apos;ll fill in what we can — you can edit everything.
+                {profileLoading
+                  ? "Loading what we already filled in…"
+                  : "We filled this in from your website — review and edit anything."}
               </p>
             </div>
 
-            {/* Website + auto-fill */}
+            {/* Website + optional re-fetch */}
             <div>
               <div className="mb-2 text-sm font-medium">Website or program link</div>
               <div className="flex gap-2">
@@ -167,10 +195,10 @@ export default function OnboardingPage() {
                   value={website}
                   onChange={(e) => setWebsite(e.target.value)}
                   placeholder="https://your-program.org"
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); autoFill(); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); reFetch(); } }}
                 />
-                <button className="btn-secondary whitespace-nowrap" disabled={enriching} onClick={autoFill}>
-                  {enriching ? "Reading…" : "✨ Auto-fill"}
+                <button className="btn-secondary whitespace-nowrap" disabled={enriching} onClick={reFetch}>
+                  {enriching ? "Reading…" : "↻ Re-fetch"}
                 </button>
               </div>
               {enrichMsg && <p className="mt-1.5 text-xs text-purple-700">{enrichMsg}</p>}
@@ -188,7 +216,7 @@ export default function OnboardingPage() {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={logoUrl} alt="logo" className="h-full w-full object-cover" />
                 ) : (
-                  "Logo"
+                  "Add logo"
                 )}
               </button>
               <label className="flex flex-1 flex-col gap-1 text-sm font-medium">
@@ -228,7 +256,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <div className="mb-2 text-sm font-medium">What talent do you work with?</div>
+              <div className="mb-2 text-sm font-medium">What talent are you looking to source or make discoverable?</div>
               <div className="flex flex-wrap gap-2">
                 {[...new Set([...FOCUS_AREAS, ...areas])].map((a) => (
                   <button key={a} onClick={() => toggleArea(a)} className={`chip ${areas.has(a) ? "chip-active" : ""}`}>

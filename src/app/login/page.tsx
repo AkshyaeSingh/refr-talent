@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import ContourBackground from "@/components/ContourBackground";
+import FlickerBackground from "@/components/FlickerBackground";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,7 +34,7 @@ export default function LoginPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center px-4">
-      <ContourBackground />
+      <FlickerBackground variant="diagonal-left" />
       <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white/80 p-8 shadow-xl backdrop-blur">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo size={28} />

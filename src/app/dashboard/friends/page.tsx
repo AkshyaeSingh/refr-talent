@@ -23,12 +23,6 @@ function tileColor(name: string) {
   return `hsl(${h}, 62%, 52%)`;
 }
 
-const SHARE_MODES = [
-  { value: "MANUAL", label: "Manual sharing" },
-  { value: "ALL", label: "Share all by default" },
-  { value: "TOP_FITS", label: "Share top fits" },
-];
-
 export default function FriendsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [orgs, setOrgs] = useState<Org[]>([]);
@@ -97,23 +91,13 @@ export default function FriendsPage() {
     await load();
   }
 
-  async function setShareMode(id: string, shareMode: string) {
-    await fetch(`/api/connections/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "setShareMode", shareMode }),
-    });
-    await load();
-  }
-
   if (loading) return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       <h1 className="mb-1 text-2xl font-bold">Friends</h1>
       <p className="mb-6 text-sm text-neutral-500">
-        Friend orgs can search each other&apos;s pools and share talent. Both sides must approve,
-        and each friendship has its own sharing preference.
+        Friend orgs can search each other&apos;s pools and share talent. Both sides must approve.
       </p>
       {status && <p className="mb-4 text-sm text-red-600">{status}</p>}
 
@@ -149,19 +133,7 @@ export default function FriendsPage() {
           const o = otherOrg(c);
           return (
             <Card key={c.id} org={o} poolSize={pools[o.id] ?? 0}>
-              <select
-                className="input w-full text-xs"
-                value={c.shareMode}
-                onChange={(e) => setShareMode(c.id, e.target.value)}
-                title="How you prefer to share data with this friend"
-              >
-                {SHARE_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-2 flex gap-2">
+              <div className="flex gap-2">
                 <Link href="/dashboard" className="btn-secondary flex-1 text-center">
                   Search pool
                 </Link>
