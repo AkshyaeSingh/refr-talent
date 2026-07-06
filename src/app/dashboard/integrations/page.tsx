@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ImportPanel from "@/components/ImportPanel";
+import AirtableConnect from "@/components/AirtableConnect";
 
 export default function IntegrationsPage() {
   const [poolSize, setPoolSize] = useState<number | null>(null);
@@ -44,6 +45,10 @@ export default function IntegrationsPage() {
         {poolSize !== null && (
           <span className="whitespace-nowrap text-xs text-neutral-500">{poolSize} candidates in your pool</span>
         )}
+      </div>
+
+      <div className="mb-6">
+        <AirtableConnect onImported={() => window.location.reload()} />
       </div>
 
       <ImportPanel />

@@ -14,6 +14,9 @@ type Candidate = {
   experienceLevel?: string | null;
   location?: string | null;
   remoteOk: boolean;
+  credentials?: string[];
+  topics?: string[];
+  audienceTier?: string | null;
   org: { id: string; name: string };
   originOrg?: { name: string } | null;
   score: number;
@@ -22,6 +25,26 @@ type Candidate = {
 };
 
 type FriendOrg = { id: string; name: string; shareMode: string };
+
+// Facet dimensions used to re-narrow results client-side (no refetch).
+type FacetKey = "credential" | "topic" | "location" | "source" | "audience";
+const FACET_LABELS: Record<FacetKey, string> = {
+  credential: "Credentials",
+  topic: "Topics",
+  location: "Location",
+  source: "Source",
+  audience: "Audience",
+};
+
+function candidateFacetValues(c: Candidate): Record<FacetKey, string[]> {
+  return {
+    credential: c.credentials ?? [],
+    topic: c.topics ?? [],
+    location: c.location ? [c.location] : [],
+    source: [c.isMine ? "My pool" : c.org.name],
+    audience: c.audienceTier ? [c.audienceTier] : [],
+  };
+}
 
 const EXAMPLES = [
   "Senior interpretability researchers",
@@ -61,6 +84,13 @@ function SearchWorkspace() {
   } | null>(null);
   const [aiOn, setAiOn] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [facets, setFacets] = useState<Record<FacetKey, Set<string>>>({
+    credential: new Set(),
+    topic: new Set(),
+    location: new Set(),
+    source: new Set(),
+    audience: new Set(),
+  });
   const pickerRef = useRef<HTMLDivElement>(null);
 
   const criteriaActive = !isCriteriaEmpty(criteria);
@@ -114,6 +144,13 @@ function SearchWorkspace() {
         return;
       }
       setCandidates(data.candidates ?? []);
+      setFacets({
+        credential: new Set(),
+        topic: new Set(),
+        location: new Set(),
+        source: new Set(),
+        audience: new Set(),
+      });
       setAiInfo(data.ai ?? null);
       setAiDoc(data.aiDoc ?? null);
       setAiOn(Boolean(data.aiAvailable));
@@ -175,6 +212,57 @@ function SearchWorkspace() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+
+  // Facet values + counts, computed from the current result set so filters
+  // always reflect real data. Ordered by frequency.
+  const availableFacets = useMemo(() => {
+    const out: Record<FacetKey, { value: string; count: number }[]> = {
+      credential: [], topic: [], location: [], source: [], audience: [],
+    };
+    const counts: Record<FacetKey, Map<string, number>> = {
+      credential: new Map(), topic: new Map(), location: new Map(), source: new Map(), audience: new Map(),
+    };
+    for (const c of candidates) {
+      const vals = candidateFacetValues(c);
+      (Object.keys(counts) as FacetKey[]).forEach((k) => {
+        for (const v of vals[k]) counts[k].set(v, (counts[k].get(v) ?? 0) + 1);
+      });
+    }
+    (Object.keys(out) as FacetKey[]).forEach((k) => {
+      out[k] = [...counts[k].entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count);
+    });
+    return out;
+  }, [candidates]);
+
+  const activeFacetCount = useMemo(
+    () => (Object.values(facets) as Set<string>[]).reduce((n, s) => n + s.size, 0),
+    [facets]
+  );
+
+  // A candidate passes if, for every facet with selections, it matches at least
+  // one selected value (OR within a facet, AND across facets).
+  const visibleCandidates = useMemo(() => {
+    if (activeFacetCount === 0) return candidates;
+    return candidates.filter((c) => {
+      const vals = candidateFacetValues(c);
+      return (Object.keys(facets) as FacetKey[]).every((k) => {
+        const sel = facets[k];
+        if (sel.size === 0) return true;
+        return vals[k].some((v) => sel.has(v));
+      });
+    });
+  }, [candidates, facets, activeFacetCount]);
+
+  function toggleFacet(key: FacetKey, value: string) {
+    setFacets((prev) => {
+      const next = { ...prev, [key]: new Set(prev[key]) };
+      if (next[key].has(value)) next[key].delete(value);
+      else next[key].add(value);
       return next;
     });
   }
@@ -503,16 +591,62 @@ function SearchWorkspace() {
         </p>
       )}
 
+      {/* Facet filters */}
+      {ran && candidates.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold text-neutral-600">
+              Filters{activeFacetCount > 0 ? ` · ${activeFacetCount}` : ""}
+            </span>
+            {activeFacetCount > 0 && (
+              <button
+                className="btn-ghost text-xs"
+                onClick={() =>
+                  setFacets({ credential: new Set(), topic: new Set(), location: new Set(), source: new Set(), audience: new Set() })
+                }
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            {(Object.keys(FACET_LABELS) as FacetKey[])
+              .filter((k) => availableFacets[k].length > 0)
+              .map((k) => (
+                <div key={k} className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-20 shrink-0 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                    {FACET_LABELS[k]}
+                  </span>
+                  {availableFacets[k].slice(0, 12).map(({ value, count }) => (
+                    <button
+                      key={value}
+                      className={`chip ${facets[k].has(value) ? "chip-active" : ""}`}
+                      onClick={() => toggleFacet(k, value)}
+                    >
+                      {value} <span className="text-neutral-400">{count}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Results */}
       {ran && (
         <div className="mt-5 flex flex-col gap-2 pb-16">
           {loading && <p className="text-sm text-neutral-500">Searching…</p>}
           {!loading && candidates.length === 0 && (
             <p className="py-10 text-center text-sm text-neutral-400">
-              No candidates found. Try fewer filters, or add more pools with ＋.
+              No candidates found. Try a broader query, or add more pools with ＋.
             </p>
           )}
-          {candidates.map((c) => (
+          {!loading && candidates.length > 0 && (
+            <div className="text-xs text-neutral-400">
+              Showing {visibleCandidates.length} of {candidates.length}
+            </div>
+          )}
+          {visibleCandidates.map((c) => (
             <div key={c.id} className="card flex items-start gap-3">
               <input
                 type="checkbox"
@@ -528,19 +662,31 @@ function SearchWorkspace() {
                   {c.originOrg && <span className="badge">via {c.originOrg.name}</span>}
                 </div>
                 <div className="mt-0.5 text-xs text-neutral-500">
-                  {[c.experienceLevel, c.location, c.remoteOk ? "remote ok" : null]
+                  {[c.experienceLevel, c.location, c.audienceTier, c.remoteOk ? "remote ok" : null]
                     .filter(Boolean)
                     .join(" · ")}
                 </div>
+                {(c.credentials?.length ?? 0) > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {c.credentials!.slice(0, 5).map((cr) => (
+                      <span
+                        key={cr}
+                        className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800"
+                      >
+                        {cr}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  {c.skills.slice(0, 6).map((s) => (
-                    <span key={s} className="badge">
-                      {s}
+                  {(c.topics ?? []).slice(0, 4).map((t) => (
+                    <span key={t} className="badge">
+                      {t}
                     </span>
                   ))}
-                  {c.roleInterest.slice(0, 3).map((r) => (
-                    <span key={r} className="badge">
-                      {r}
+                  {c.skills.slice(0, 4).map((s) => (
+                    <span key={s} className="badge">
+                      {s}
                     </span>
                   ))}
                 </div>

@@ -8,6 +8,7 @@ import {
   type AirtableConfig,
   type TypeformConfig,
 } from "@/lib/connectorSync";
+import { getValidAccessToken, type AirtableOAuthConfig } from "@/lib/airtable/connection";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -29,10 +30,27 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     let includeColumns: string[] | undefined;
 
     if (connector.type === "AIRTABLE") {
-      const c = config as AirtableConfig & { includeColumns?: string[] };
-      fieldMapping = c.fieldMapping;
-      includeColumns = c.includeColumns;
-      rows = await fetchAirtableRows(c);
+      const oauthCfg = config as AirtableOAuthConfig;
+      if (oauthCfg?.oauth) {
+        // OAuth-connected Airtable: mint a fresh access token per sync.
+        if (!oauthCfg.baseId || !oauthCfg.tableId) {
+          return NextResponse.json({ error: "Pick a base and table first." }, { status: 400 });
+        }
+        const token = await getValidAccessToken(id);
+        fieldMapping = oauthCfg.fieldMapping ?? {};
+        includeColumns = oauthCfg.includeColumns;
+        rows = await fetchAirtableRows({
+          token,
+          baseId: oauthCfg.baseId,
+          tableId: oauthCfg.tableId,
+          fieldMapping,
+        });
+      } else {
+        const c = config as AirtableConfig & { includeColumns?: string[] };
+        fieldMapping = c.fieldMapping;
+        includeColumns = c.includeColumns;
+        rows = await fetchAirtableRows(c);
+      }
     } else {
       const c = config as TypeformConfig & { includeColumns?: string[] };
       fieldMapping = c.fieldMapping;
