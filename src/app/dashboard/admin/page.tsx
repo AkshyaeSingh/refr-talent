@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isAdminEmail } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
+import AdminOrgsTable from "@/components/AdminOrgsTable";
 
 export const dynamic = "force-dynamic";
 
@@ -44,41 +45,17 @@ export default async function AdminPage() {
 
       {/* Orgs */}
       <Section title={`Registered orgs (${orgs.length})`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-neutral-400">
-              <tr>
-                <th className="py-2 pr-4">Org</th>
-                <th className="py-2 pr-4">Type</th>
-                <th className="py-2 pr-4">Admin</th>
-                <th className="py-2 pr-4 text-right">Pool</th>
-                <th className="py-2 pr-4 text-right">Searches</th>
-                <th className="py-2 pr-4 text-right">Sources</th>
-                <th className="py-2 pr-4">Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orgs.map((o) => (
-                <tr key={o.id} className="border-t border-neutral-100">
-                  <td className="py-2 pr-4 font-medium">
-                    {o.name}
-                    {o.website && (
-                      <a href={o.website} target="_blank" rel="noreferrer" className="ml-1.5 text-xs text-purple-600 underline">
-                        site
-                      </a>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 text-neutral-500">{o.orgType ?? "—"}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{o.users[0]?.email ?? "—"}</td>
-                  <td className="py-2 pr-4 text-right">{o._count.candidates}</td>
-                  <td className="py-2 pr-4 text-right">{o._count.savedSearches}</td>
-                  <td className="py-2 pr-4 text-right">{o._count.connectors}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{fmt(o.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AdminOrgsTable
+          initialOrgs={orgs.map((o) => ({
+            id: o.id,
+            name: o.name,
+            website: o.website,
+            orgType: o.orgType,
+            createdAt: o.createdAt.toISOString(),
+            _count: o._count,
+            users: o.users,
+          }))}
+        />
       </Section>
 
       {/* Feedback */}

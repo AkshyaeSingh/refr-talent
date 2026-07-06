@@ -58,7 +58,11 @@ export default function FriendsPage() {
   const friendsList = connections.filter((c) => c.status === "APPROVED");
   const incoming = connections.filter((c) => c.status === "PENDING" && c.requestedById !== myOrgId);
   const outgoing = connections.filter((c) => c.status === "PENDING" && c.requestedById === myOrgId);
-  const discover = orgs.filter((o) => !activeIds.has(o.id));
+  // Mock Talent Org always leads "Orgs you may know" so new orgs see the
+  // no-commitment demo pool first.
+  const discover = orgs
+    .filter((o) => !activeIds.has(o.id))
+    .sort((a, b) => (a.slug === MOCK_ORG_SLUG ? -1 : b.slug === MOCK_ORG_SLUG ? 1 : 0));
 
   async function request(targetOrgId: string, targetOrg?: Org) {
     setStatus(null);
@@ -214,7 +218,7 @@ function Card({
         <span className="text-5xl font-bold text-white">{initials}</span>
         {org.slug === MOCK_ORG_SLUG && (
           <span className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-700">
-            Demo
+            Start Here
           </span>
         )}
       </div>
