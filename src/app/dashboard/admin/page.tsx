@@ -51,6 +51,7 @@ export default async function AdminPage() {
             name: o.name,
             website: o.website,
             orgType: o.orgType,
+            hidden: o.hidden,
             createdAt: o.createdAt.toISOString(),
             _count: o._count,
             users: o.users,

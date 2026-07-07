@@ -13,14 +13,16 @@ const NAV = [
   { href: "/dashboard/integrations", label: "Integrations", icon: ConnectorsIcon },
 ];
 
+const ADMIN_NAV = [{ href: "/dashboard/admin", label: "Admin", icon: AdminIcon }];
+
 export default function Sidebar({ orgName, isAdmin = false }: { orgName: string; isAdmin?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const [searches, setSearches] = useState<SavedSearch[]>([]);
 
-  const nav = isAdmin
-    ? [...NAV, { href: "/dashboard/admin", label: "Admin", icon: AdminIcon }]
-    : NAV;
+  // Admin accounts are for managing the app, not using it as a tenant — show
+  // only the Admin link, no Search history or org profile shortcut.
+  const nav = isAdmin ? ADMIN_NAV : NAV;
 
   const loadSearches = useCallback(async () => {
     const res = await fetch("/api/searches");
@@ -66,52 +68,57 @@ export default function Sidebar({ orgName, isAdmin = false }: { orgName: string;
         })}
       </nav>
 
-      <div className="mt-6 flex-1 overflow-y-auto px-3">
-        <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-          History
+      {!isAdmin && (
+        <div className="mt-6 flex-1 overflow-y-auto px-3">
+          <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            History
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {searches.length === 0 && (
+              <p className="px-3 py-1 text-xs text-neutral-400">Saved searches appear here.</p>
+            )}
+            {searches.map((s) => {
+              const href = `/dashboard?s=${s.id}`;
+              return (
+                <div key={s.id} className="group flex items-center">
+                  <button
+                    onClick={() => router.push(href)}
+                    className="flex-1 truncate rounded-lg px-3 py-1.5 text-left text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                    title={s.name}
+                  >
+                    {s.name}
+                  </button>
+                  <button
+                    onClick={() => remove(s.id)}
+                    className="mr-1 hidden rounded px-1.5 text-neutral-400 hover:text-red-600 group-hover:block"
+                    title="Delete saved search"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
-        <div className="flex flex-col gap-0.5">
-          {searches.length === 0 && (
-            <p className="px-3 py-1 text-xs text-neutral-400">Saved searches appear here.</p>
-          )}
-          {searches.map((s) => {
-            const href = `/dashboard?s=${s.id}`;
-            return (
-              <div key={s.id} className="group flex items-center">
-                <button
-                  onClick={() => router.push(href)}
-                  className="flex-1 truncate rounded-lg px-3 py-1.5 text-left text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
-                  title={s.name}
-                >
-                  {s.name}
-                </button>
-                <button
-                  onClick={() => remove(s.id)}
-                  className="mr-1 hidden rounded px-1.5 text-neutral-400 hover:text-red-600 group-hover:block"
-                  title="Delete saved search"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      )}
+      {isAdmin && <div className="flex-1" />}
 
-      <Link
-        href="/dashboard/profile"
-        className={`flex items-center gap-3 border-t border-neutral-200 px-5 py-3 transition-colors hover:bg-neutral-100 ${
-          pathname === "/dashboard/profile" ? "bg-neutral-100" : ""
-        }`}
-      >
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white">
-          {orgName.slice(0, 2).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{orgName}</div>
-          <div className="truncate text-xs text-neutral-500">Profile &amp; integrations</div>
-        </div>
-      </Link>
+      {!isAdmin && (
+        <Link
+          href="/dashboard/profile"
+          className={`flex items-center gap-3 border-t border-neutral-200 px-5 py-3 transition-colors hover:bg-neutral-100 ${
+            pathname === "/dashboard/profile" ? "bg-neutral-100" : ""
+          }`}
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white">
+            {orgName.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{orgName}</div>
+            <div className="truncate text-xs text-neutral-500">Profile &amp; integrations</div>
+          </div>
+        </Link>
+      )}
     </aside>
   );
 }

@@ -26,6 +26,11 @@ model Org {
   logoUrl     String? // data URL or hosted URL of the org's logo
   website     String? // the org's homepage/program link
   description String? // one-paragraph summary (often AI-derived from the website)
+  // Excludes this org from every other org's discovery/"orgs you may know"
+  // list — used for the operator's own admin/dev org so it never appears as
+  // a connectable peer in the network. Set automatically the first time an
+  // admin-allowlisted email logs into an org; also manually toggleable.
+  hidden      Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   users                  User[]

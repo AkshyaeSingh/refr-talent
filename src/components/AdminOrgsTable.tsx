@@ -7,6 +7,7 @@ export type AdminOrg = {
   name: string;
   website: string | null;
   orgType: string | null;
+  hidden: boolean;
   createdAt: string;
   _count: { candidates: number; users: number; savedSearches: number; connectors: number };
   users: { email: string; name: string }[];
@@ -116,6 +117,11 @@ function OrgRow({
               site
             </a>
           )}
+          {org.hidden && (
+            <span className="ml-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+              Hidden
+            </span>
+          )}
         </td>
         <td className="py-2 pr-4 text-neutral-500">{org.orgType ?? "—"}</td>
         <td className="py-2 pr-4 text-neutral-500">{org.users[0]?.email ?? "—"}</td>
@@ -147,6 +153,7 @@ function EditForm({ org, onSaved }: { org: AdminOrg; onSaved: (updated: Partial<
   const [name, setName] = useState(org.name);
   const [website, setWebsite] = useState(org.website ?? "");
   const [orgType, setOrgType] = useState(org.orgType ?? "");
+  const [hidden, setHidden] = useState(org.hidden);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,12 +167,13 @@ function EditForm({ org, onSaved }: { org: AdminOrg; onSaved: (updated: Partial<
         name: name.trim() || undefined,
         website: website.trim() || null,
         orgType: orgType || null,
+        hidden,
       }),
     });
     const d = await res.json();
     setBusy(false);
     if (!res.ok) return setError(d.error ?? "Couldn't save.");
-    onSaved({ name: d.org.name, website: d.org.website, orgType: d.org.orgType });
+    onSaved({ name: d.org.name, website: d.org.website, orgType: d.org.orgType, hidden: d.org.hidden });
   }
 
   return (
@@ -185,6 +193,10 @@ function EditForm({ org, onSaved }: { org: AdminOrg; onSaved: (updated: Partial<
             <option key={t.value} value={t.value}>{t.label}</option>
           ))}
         </select>
+      </label>
+      <label className="flex items-center gap-1.5 pb-2 text-xs font-medium text-neutral-600">
+        <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} />
+        Hidden from network
       </label>
       {error && <p className="text-xs text-red-600">{error}</p>}
       <button className="btn-primary text-xs" disabled={busy} onClick={save}>

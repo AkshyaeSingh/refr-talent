@@ -18,7 +18,9 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     }),
     prisma.org.findMany({
-      where: { id: { not: user.orgId } },
+      // Hidden orgs (the operator's own admin/dev org) never appear as a
+      // connectable peer to anyone.
+      where: { id: { not: user.orgId }, hidden: false },
       orderBy: { name: "asc" },
       select: { id: true, name: true, slug: true, orgType: true, focusAreas: true },
     }),

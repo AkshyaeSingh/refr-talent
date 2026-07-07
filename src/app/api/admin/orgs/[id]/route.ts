@@ -9,6 +9,9 @@ const schema = z.object({
   website: z.string().max(300).nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
   focusAreas: z.array(z.string()).max(20).optional(),
+  // When true, this org never appears in any other org's discovery/"orgs you
+  // may know" list — used for the operator's own admin/dev org.
+  hidden: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
