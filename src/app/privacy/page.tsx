@@ -75,7 +75,7 @@ export default function PrivacyPage() {
           <h2 className="text-base font-semibold text-neutral-900">Contact</h2>
           <p className="mt-1">
             Questions about this policy or your data:{" "}
-            <a href="mailto:[SUPPORT_EMAIL]" className="text-purple-700 underline">[SUPPORT_EMAIL]</a>.
+            <a href="mailto:akshyaesingh@gmail.com" className="text-purple-700 underline">akshyaesingh@gmail.com</a>.
           </p>
         </section>
       </div>
