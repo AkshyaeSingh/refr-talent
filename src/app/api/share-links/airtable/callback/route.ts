@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
 import { exchangeCodeForToken, getAirtableOAuthConfig, requestOrigin } from "@/lib/airtable/oauth";
-import { clearQsOAuthCookies, readQsOAuthCookies, setQsToken } from "@/lib/airtable/quickShareSession";
+import { clearQsOAuthCookies, readQsOAuthCookies, setQsToken, qsRedirectUri } from "@/lib/airtable/quickShareSession";
 
-export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+// FIXED callback path (see authorize/route.ts for why) — the share-link token
+// travels in the `state` param, not the URL, so this one route serves every
+// quick-share link.
+export async function GET(req: Request) {
   const base = requestOrigin(req);
   const { searchParams } = new URL(req.url);
 
-  const fail = (message: string) =>
-    NextResponse.redirect(new URL(`/share/${token}?airtable=error&message=${encodeURIComponent(message)}`, base));
+  const state = searchParams.get("state");
+  const shareToken = state?.split(".")[0];
+
+  function fail(message: string) {
+    const target = shareToken ? `/share/${shareToken}` : "/";
+    return NextResponse.redirect(new URL(`${target}?airtable=error&message=${encodeURIComponent(message)}`, base));
+  }
 
   const err = searchParams.get("error");
   if (err) return fail(searchParams.get("error_description") ?? err);
 
   const code = searchParams.get("code");
-  const state = searchParams.get("state");
-  if (!code || !state) return fail("Missing code or state.");
+  if (!code || !state || !shareToken) return fail("Missing code or state.");
 
   const { state: expectedState, verifier } = await readQsOAuthCookies();
   await clearQsOAuthCookies();
@@ -23,10 +29,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   if (state !== expectedState) return fail("State mismatch — possible CSRF.");
 
   try {
-    const config = getAirtableOAuthConfig();
+    const config = { ...getAirtableOAuthConfig(), redirectUri: qsRedirectUri(base) };
     const tokenResp = await exchangeCodeForToken(config, { code, codeVerifier: verifier });
     await setQsToken(tokenResp.accessToken);
-    return NextResponse.redirect(new URL(`/share/${token}?airtable=connected`, base));
+    return NextResponse.redirect(new URL(`/share/${shareToken}?airtable=connected`, base));
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Airtable connection failed.");
   }

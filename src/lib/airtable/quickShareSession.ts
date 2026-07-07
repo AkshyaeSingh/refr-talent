@@ -50,3 +50,13 @@ export async function getQsToken(): Promise<string | null> {
     return null;
   }
 }
+
+// Airtable requires the OAuth redirect_uri to be an exact, pre-registered
+// URL — it can't vary per share-link token. So the quick-share flow uses one
+// FIXED callback path (distinct from the logged-in org flow's callback,
+// which is registered separately), and carries the share-link token through
+// the OAuth `state` param instead of the URL. This must be added as an
+// additional redirect URL in the Airtable OAuth app's settings.
+export function qsRedirectUri(origin: string): string {
+  return `${origin}/api/share-links/airtable/callback`;
+}

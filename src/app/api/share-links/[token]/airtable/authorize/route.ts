@@ -9,11 +9,13 @@ import {
   getAirtableOAuthConfig,
   requestOrigin,
 } from "@/lib/airtable/oauth";
-import { setQsOAuthCookies } from "@/lib/airtable/quickShareSession";
+import { setQsOAuthCookies, qsRedirectUri } from "@/lib/airtable/quickShareSession";
 
 // Starts the Airtable OAuth flow for an anonymous quick-share giver (no Refr
-// account needed). State/verifier live in short-lived cookies scoped to this
-// share link, same PKCE mechanism as the logged-in org flow.
+// account needed). Uses a FIXED callback URL (qsRedirectUri) distinct from the
+// logged-in org flow's — Airtable requires an exact pre-registered redirect_uri
+// per client, it can't vary per share-link token — and carries the share-link
+// token through the `state` param so the fixed callback knows where to return.
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const base = requestOrigin(req);
@@ -26,8 +28,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     return NextResponse.redirect(new URL(`/share/${token}?airtable=unconfigured`, base));
   }
 
-  const config = getAirtableOAuthConfig();
-  const state = generateState();
+  const config = { ...getAirtableOAuthConfig(), redirectUri: qsRedirectUri(base) };
+  const randomState = generateState();
+  const state = `${token}.${randomState}`;
   const codeVerifier = generateCodeVerifier();
   const authorizeUrl = buildAuthorizeUrl(config, { state, codeChallenge: codeChallengeFromVerifier(codeVerifier) });
 
