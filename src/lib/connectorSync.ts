@@ -13,20 +13,45 @@ export type TypeformConfig = {
   fieldMapping: FieldMapping;
 };
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Airtable enforces 5 requests/second per base. A large table (e.g. 4,900+
+// records = ~49 pages at 100/page) fired back-to-back trips that limit and
+// Airtable returns 429s. Throttle to stay under it, and retry a handful of
+// times (honoring Retry-After) if we still get rate-limited.
+const AIRTABLE_MIN_INTERVAL_MS = 220;
+const MAX_RATE_LIMIT_RETRIES = 5;
+
 // Fetches all rows from an Airtable table (following pagination) and returns
-// them as plain string maps keyed by Airtable field name.
+// them as plain string maps keyed by Airtable field name. No hard cap on row
+// count — large tables just take longer due to the throttling above.
 export async function fetchAirtableRows(config: AirtableConfig): Promise<Record<string, string>[]> {
   const rows: Record<string, string>[] = [];
   let offset: string | undefined;
+  let lastRequestAt = 0;
 
   do {
+    const wait = AIRTABLE_MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
+    if (wait > 0) await sleep(wait);
+
     const url = new URL(`https://api.airtable.com/v0/${config.baseId}/${config.tableId}`);
     url.searchParams.set("pageSize", "100");
     if (offset) url.searchParams.set("offset", offset);
 
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${config.token}` },
-    });
+    let res: Response;
+    let attempt = 0;
+    for (;;) {
+      lastRequestAt = Date.now();
+      res = await fetch(url, { headers: { Authorization: `Bearer ${config.token}` } });
+      if (res.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) break;
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      const backoffMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt;
+      await sleep(backoffMs);
+      attempt++;
+    }
+
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Airtable ${res.status}: ${body.slice(0, 200)}`);
