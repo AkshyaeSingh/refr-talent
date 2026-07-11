@@ -21,6 +21,12 @@ export const runtime = "nodejs";
 // persona) and run through the two-stage matcher instead of flat parsing.
 const DOC_THRESHOLD = 180;
 
+// Safety cap on how many rows a single search/browse query can pull from an
+// accessible pool — not a "database limit" (Postgres has none here), just a
+// guard against pathological pool sizes until real pagination exists. Well
+// above any pool this app has seen so far.
+const POOL_FETCH_LIMIT = 10_000;
+
 const criteriaSchema = z.object({
   skills: z.array(z.string()).default([]),
   roleInterest: z.array(z.string()).default([]),
@@ -145,7 +151,7 @@ export async function POST(req: Request) {
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
         orderBy: { createdAt: "desc" },
-        take: 2000,
+        take: POOL_FETCH_LIMIT,
       });
       if (rows.length > 0) {
         // Deriving criteria doesn't depend on the shortlist — kick it off now so
@@ -225,7 +231,7 @@ export async function POST(req: Request) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
-        take: 2000,
+        take: POOL_FETCH_LIMIT,
       });
       const results = await semanticSearch(q, rows);
       if (results.length > 0) {
@@ -275,7 +281,7 @@ export async function POST(req: Request) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
-        take: 1000,
+        take: POOL_FETCH_LIMIT,
       });
       const ranked = await rankCandidates(q, weighted, rows, 25);
       const reasons: Record<string, string> = {};
@@ -337,7 +343,7 @@ export async function POST(req: Request) {
       originOrg: { select: { name: true } },
       org: { select: { id: true, name: true, slug: true } },
     },
-    take: 1000,
+    take: POOL_FETCH_LIMIT,
   });
 
   let scored = rows.map((c) => {
