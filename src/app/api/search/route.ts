@@ -27,6 +27,16 @@ const DOC_THRESHOLD = 180;
 // above any pool this app has seen so far.
 const POOL_FETCH_LIMIT = 10_000;
 
+// Separate, much smaller cap on how many candidates ever get run through the
+// local embedding model in one request. The embedding cache is per-candidate
+// and in-memory (reset on every process restart), so a cold cache against a
+// large pool would otherwise try to embed thousands of documents in a single
+// synchronous batch — slow/heavy enough to time out or crash the request.
+// Narrow with the cheap keyword prefilter first (over the FULL fetched pool,
+// so nothing outside the embedding step is lost) before ever calling the
+// bi-encoder.
+const EMBED_CANDIDATE_CAP = 500;
+
 const criteriaSchema = z.object({
   skills: z.array(z.string()).default([]),
   roleInterest: z.array(z.string()).default([]),
@@ -166,10 +176,13 @@ export async function POST(req: Request) {
           // path block the search — fall back to a cheap keyword prefilter
           // (much better than plain recency) if the models aren't available.
           try {
-            // Bound the embedding step: a cold model download can take tens of
-            // seconds, so cut it off and use the keyword prefilter instead.
+            // Bound how many candidates we ever try to embed in one request —
+            // and bound the embedding step itself: a cold model download can
+            // take tens of seconds, so cut it off and use the keyword
+            // prefilter instead.
+            const embedPool = rows.length > EMBED_CANDIDATE_CAP ? keywordPrefilter(rows, q, EMBED_CANDIDATE_CAP) : rows;
             const hits = await Promise.race([
-              semanticSearch(q, rows, { retrieveK: SHORTLIST_N, topN: SHORTLIST_N }),
+              semanticSearch(q, embedPool, { retrieveK: SHORTLIST_N, topN: SHORTLIST_N }),
               new Promise<never>((_, reject) => setTimeout(() => reject(new Error("embed timeout")), 8000)),
             ]);
             if (hits.length > 0) {
@@ -233,7 +246,9 @@ export async function POST(req: Request) {
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
         take: POOL_FETCH_LIMIT,
       });
-      const results = await semanticSearch(q, rows);
+      // Same embedding-cost bound as the evaluated path above.
+      const embedPool = rows.length > EMBED_CANDIDATE_CAP ? keywordPrefilter(rows, q, EMBED_CANDIDATE_CAP) : rows;
+      const results = await semanticSearch(q, embedPool);
       if (results.length > 0) {
         const byId = new Map(rows.map((r) => [r.id, r]));
         const candidates = results
