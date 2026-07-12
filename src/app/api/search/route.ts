@@ -23,9 +23,10 @@ const DOC_THRESHOLD = 180;
 
 // Safety cap on how many rows a single search/browse query can pull from an
 // accessible pool — not a "database limit" (Postgres has none here), just a
-// guard against pathological pool sizes until real pagination exists. Well
-// above any pool this app has seen so far.
-const POOL_FETCH_LIMIT = 10_000;
+// guard against pathological pool sizes until real pagination exists. Matches
+// the CSV import cap (see api/import/route.ts) so nothing an org can legally
+// have in its pool gets truncated.
+const POOL_FETCH_LIMIT = 5_000;
 
 // Separate, much smaller cap on how many candidates ever get run through the
 // local embedding model in one request. The embedding cache is per-candidate
@@ -160,6 +161,11 @@ export async function POST(req: Request) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
+        // rawFields is a raw imported-answers blob that can be large; the AI
+        // evaluator only ever reads it for the ~24-candidate shortlist below,
+        // so omitting it here keeps the full-pool fetch (up to POOL_FETCH_LIMIT
+        // rows) cheap and re-fetch it just for the shortlist instead.
+        omit: { rawFields: true },
         orderBy: { createdAt: "desc" },
         take: POOL_FETCH_LIMIT,
       });
@@ -199,9 +205,17 @@ export async function POST(req: Request) {
         // Small pools skip retrieval entirely and evaluate everyone — faster and
         // strictly more accurate than shortlisting.
 
+        // Kick off the rawFields backfill for just the shortlist concurrently
+        // with awaiting criteria — only ~24 rows, not the whole pool.
+        const rawFieldsPromise = prisma.candidate.findMany({
+          where: { id: { in: shortlist.map((c) => c.id) } },
+          select: { id: true, rawFields: true },
+        });
         const criteria = await criteriaPromise;
         if (criteria.length > 0) {
-          const evals = await evaluateCandidates(q, criteria, shortlist);
+          const rawFieldsById = new Map((await rawFieldsPromise).map((r) => [r.id, r.rawFields]));
+          const evalInput = shortlist.map((c) => ({ ...c, rawFields: rawFieldsById.get(c.id) }));
+          const evals = await evaluateCandidates(q, criteria, evalInput);
           const candidates = shortlist
             .map((row) => {
               const ev = evals.get(row.id);
@@ -244,6 +258,7 @@ export async function POST(req: Request) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
+        omit: { rawFields: true },
         take: POOL_FETCH_LIMIT,
       });
       // Same embedding-cost bound as the evaluated path above.
@@ -296,6 +311,12 @@ export async function POST(req: Request) {
       const rows = await prisma.candidate.findMany({
         where: orgClause,
         include: { originOrg: { select: { name: true } }, org: { select: { id: true, name: true, slug: true } } },
+        // Stage-1 keyword scoring in rankCandidates doesn't touch rawFields,
+        // only the top-25 AI rerank does — omitted here for the same reason
+        // as the evaluated path above (this mode's rerank shortlist will read
+        // notes/skills but not raw answers; acceptable for this rarer,
+        // long-paste search mode).
+        omit: { rawFields: true },
         take: POOL_FETCH_LIMIT,
       });
       const ranked = await rankCandidates(q, weighted, rows, 25);
@@ -358,6 +379,8 @@ export async function POST(req: Request) {
       originOrg: { select: { name: true } },
       org: { select: { id: true, name: true, slug: true } },
     },
+    // Plain keyword/browse mode never reads rawFields (no AI step).
+    omit: { rawFields: true },
     take: POOL_FETCH_LIMIT,
   });
 
